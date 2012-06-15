@@ -10,7 +10,7 @@ using MonoDevelop.AspNet;
 using MonoDevelop.AspNet.Parser;
 using MonoDevelop.AspNet.Parser.Dom;
 using MonoDevelop.SourceEditor;
-using Mono.TextEditor;
+//using Mono.TextEditor;
 
 namespace AspNetEdit2.Integration
 {
