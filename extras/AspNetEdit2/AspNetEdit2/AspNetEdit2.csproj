@@ -19,6 +19,11 @@
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
     <ConsolePause>false</ConsolePause>
+    <CustomCommands>
+      <CustomCommands>
+        <Command type="Execute" command="../../../main/build/bin/MonoDevelop.exe" />
+      </CustomCommands>
+    </CustomCommands>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugType>none</DebugType>
@@ -61,8 +66,8 @@
     <Compile Include="AssemblyInfo.cs" />
     <Compile Include="AspNetEdit2.Integration\AspNetEdit2DisplayBinding.cs" />
     <Compile Include="AspNetEdit2.Integration\AspNetEdit2ViewContent.cs" />
-    <Compile Include="AspNetEdit2.Architecure\CanonicalDomTree.cs" />
     <Compile Include="AspNetEdit2.Architecure\VisualEditor.cs" />
+    <Compile Include="AspNetEdit2.Architecure\MainDomTree.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
   <ItemGroup>

@@ -1,6 +1,6 @@
 //
-//	VisualEditor.cs - 
-//					
+//	MainDomTree.cs - Stores and manages a canonical DOM tree
+//					representation of the edited document.
 //
 //	Authors:
 //		Petar Dodev <petar.dodev@gmail.com>
@@ -24,9 +24,9 @@ using System;
 
 namespace AspNetEdit2.Architecture
 {
-	public class VisualEditor
+	public class MainDomTree
 	{
-		public VisualEditor ()
+		public MainDomTree ()
 		{
 		}
 	}
