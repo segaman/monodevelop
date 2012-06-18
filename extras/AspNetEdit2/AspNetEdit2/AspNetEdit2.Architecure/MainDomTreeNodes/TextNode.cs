@@ -1,5 +1,5 @@
 //
-//	HtmlNode.cs - 
+//	TextNode.cs - Contains a text node of the structure
 // 
 //
 //	Authors:
@@ -26,32 +26,45 @@ namespace AspNetEdit2.Architecture
 {
 	public class TextNode : INode
 	{
-		public TextNode ()
+		int aneId;
+		string text;
+		IParentNode parent;
+		// TODO: check if the whole text is whitespace
+		// 		I don't like whitespace in HTML, so there will be no
+		//		ws in the editor view >:) mwuhahaha
+		
+		public TextNode (int id, string content, IParentNode parentNode)
 		{
-			
+			aneId = id;
+			text = content;
+			parent = parentNode;
 		}
 
 		#region INode implementation
 		string INode.ToHtml ()
 		{
-			throw new System.NotImplementedException ();
+			// the text is in a span element so that editing it would bring
+			// so that editing it would be possible
+			// TODO: ane_id attribute
+			// TODO: spans with ids only the editable text in the <body> tag
+			return /*"<span>"  + */ text /*+ "</span>"*/;
 		}
 
 		int INode.AneId {
 			get {
-				throw new System.NotImplementedException ();
+				return aneId;
+			}
+		}
+		
+		public string Name {
+			get {
+				return string.Empty;
 			}
 		}
 
-		System.Collections.Generic.List<INode> INode.Children {
+		IParentNode INode.Parent {
 			get {
-				throw new System.NotImplementedException ();
-			}
-		}
-
-		INode INode.Parent {
-			get {
-				throw new System.NotImplementedException ();
+				return parent;
 			}
 		}
 		#endregion

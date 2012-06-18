@@ -68,6 +68,11 @@
     <Compile Include="AspNetEdit2.Integration\AspNetEdit2ViewContent.cs" />
     <Compile Include="AspNetEdit2.Architecure\VisualEditor.cs" />
     <Compile Include="AspNetEdit2.Architecure\MainDomTree.cs" />
+    <Compile Include="AspNetEdit2.Architecure\MainDomTreeNodes\INode.cs" />
+    <Compile Include="AspNetEdit2.Architecure\MainDomTreeNodes\HtmlNode.cs" />
+    <Compile Include="AspNetEdit2.Architecure\MainDomTreeNodes\TextNode.cs" />
+    <Compile Include="AspNetEdit2.Architecure\MainDomTreeNodes\RootElement.cs" />
+    <Compile Include="AspNetEdit2.Architecure\MainDomTreeNodes\IParentNode.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
   <ItemGroup>

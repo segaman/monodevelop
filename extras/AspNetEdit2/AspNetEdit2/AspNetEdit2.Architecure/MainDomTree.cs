@@ -21,13 +21,60 @@
 //
 
 using System;
+using System.IO;
+using System.Collections.Generic;
+
+using MonoDevelop.AspNet;
+using MonoDevelop.AspNet.Parser;
+using MonoDevelop.AspNet.Parser.Dom;
 
 namespace AspNetEdit2.Architecture
 {
 	public class MainDomTree
 	{
+		// List of the root level elements
+		// each INode contains a list of its own
+		// resembling the tree structure of the DOM
+		//List<INode> domTree;
+		
+		// contains the document as parsed by the  AspNetParser
+		// will be used when serializing to the sourceEditor view is implemented...
+		//AspNetParsedDocument parsedDocument;
+		
+		// Contains the root node. It has the ability to parse a ASP.NET documentt
+		// and build a DOM tree. Also it can serialize itself to HTML for displaying in the
+		// webkit's designer surface
+		RootNode rootNode;
+		// TODO: drop the tree when the view is being disposed
+		
+		VisualEditor vEditor;
+		
 		public MainDomTree ()
 		{
+			rootNode = new RootNode ();
+			vEditor = new VisualEditor ();
+		}
+		
+		
+		public void BuildTree (string fileName, string document)
+		{
+			try {
+				rootNode.ParseDocument (fileName, document);
+			} catch (Exception e) {
+				// TODO: error handling mechanism
+			}
+		}
+		
+		public void DisplayEditor (Gtk.Frame designerFrame)
+		{
+			vEditor.SetFrame (designerFrame);
+			
+			vEditor.LoadString (rootNode.ToHtml (), null, null, null);
+		}
+		
+		public void CleanUp ()
+		{
+			vEditor.DisposeView ();
 		}
 	}
 }

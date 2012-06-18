@@ -27,14 +27,14 @@ namespace AspNetEdit2.Architecture
 {
 	public interface INode
 	{
-		// AspNetEdit's internal ID for the node
-		int AneId { get;}
+		// AspNetEdit's internal, unique ID for the node
+		int AneId { get; }
 		
-		// A list of the elements children
-		List<INode> Children { get; }
+		// the name of the node, e.g. "html", "asp:button"
+		string Name { get; }
 		
 		// Reference to the element's parent
-		INode Parent { get; }
+		IParentNode Parent { get; }
 		
 		// Method, which will define how to serialize
 		// the class of elements to HTML for the visual editor

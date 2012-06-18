@@ -1,5 +1,5 @@
 //
-//	VisualEditor.cs - 
+//	VisualEditor.cs - Container of the designer surface
 //					
 //
 //	Authors:
@@ -22,12 +22,47 @@
 
 using System;
 
+using WebKit;
+
+using Gtk;
+
 namespace AspNetEdit2.Architecture
 {
 	public class VisualEditor
 	{
+		Frame designerFrame;
+		WebView view;
+		
 		public VisualEditor ()
 		{
+			designerFrame = null;
+			view = null;
+		}
+		
+		public void SetFrame (Frame frame)
+		{
+			designerFrame = frame;
+		}
+		
+		public void LoadString (string content, string mimeType, string encoding, string baseUrl)
+		{
+			if (designerFrame != null) {
+				if (view != null)
+					view.Dispose ();
+				
+				view = new WebView ();
+				
+				designerFrame.Add (view);
+				designerFrame.ShowAll ();
+				view.LoadString (content, mimeType, encoding, baseUrl);
+				view.Show ();
+			}
+		}
+		
+		public void DisposeView ()
+		{
+			view.Dispose ();
+			view = null;
 		}
 	}
 }

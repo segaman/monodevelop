@@ -1,5 +1,5 @@
 //
-//	HtmlNode.cs - 
+//	HtmlNode.cs - Html tag nodes and their attributes
 // 
 //
 //	Authors:
@@ -25,35 +25,76 @@ using System.Collections.Generic;
 
 namespace AspNetEdit2.Architecture
 {
-	public class HtmlNode : INode
+	public class HtmlNode : IParentNode
 	{
-		public HtmlNode ()
-		{
-			
-		}
+		int aneId;
+		string tagName;
+		List<INode> children;
+		IParentNode parent;
+		// attributes ?!
+		// bool selfclosing ?
 		
+		// TODO: implement storing attributes
+		
+		public HtmlNode (int id, string name, IParentNode parentNode)
+		{
+			aneId = id;
+			tagName = name;
+			parent = parentNode;
+			children = null;
+		}
+
 		#region INode implementation
-		
-		public int AneId {
-			get {
-				throw new System.NotImplementedException ();
-			}
-		}
-		
-		public string ToHtml ()
+		string INode.ToHtml ()
 		{
-			throw new System.NotImplementedException ();
+			string output = string.Empty;
+			
+			output = "<" + tagName;
+			// TODO: serialize attributes
+			// TODO: implement the ane_id attribute for recognizing elements from the webview
+			// TODO: handle selfclosing tags?!>!>>!>!>?
+			output += ">";
+			
+			if (children != null) {
+				foreach (INode child in children)
+					output += child.ToHtml ();
+			}
+			
+			return output + "</" + tagName + ">";
 		}
 
-		public List<INode> Children {
+		int INode.AneId {
 			get {
-				throw new System.NotImplementedException ();
+				return aneId;
+			}
+		}
+		
+		public string Name {
+			get {
+				return tagName;
 			}
 		}
 
-		public INode Parent {
+		public IParentNode Parent {
 			get {
-				throw new System.NotImplementedException ();
+				return parent;
+			}
+		}
+		#endregion
+
+		#region IParentNode implementation
+		void IParentNode.AddChild (INode child)
+		{
+			if (children == null) {
+				children = new List<INode> ();
+			}
+			
+			children.Add (child);
+		}
+
+		List<INode> IParentNode.Children {
+			get {
+				return children;
 			}
 		}
 		#endregion

@@ -24,7 +24,7 @@ using System.IO;
 
 using Gtk;
 
-using WebKit;
+//using WebKit;
 
 using MonoDevelop.Ide.Gui;
 using MonoDevelop.DesignerSupport;
@@ -34,13 +34,17 @@ using MonoDevelop.AspNet.Parser.Dom;
 using MonoDevelop.AspNet.Parser.Internal;
 using MonoDevelop.SourceEditor;
 
+using AspNetEdit2.Architecture;
+
 namespace AspNetEdit2.Integration
 {
 	public class AspNetEdit2ViewContent : AbstractAttachableViewContent
 	{
 		Frame designerFrame;
 		IViewContent viewContent;
-		WebView view;
+//		WebView view;
+		MainDomTree domTree; // for testing purposes the Main DOM tree is contained here
+							// will be moved whe a DesignerHost is implemented
 		
 		public AspNetEdit2ViewContent (IViewContent viewContent)
 		{
@@ -50,6 +54,8 @@ namespace AspNetEdit2.Integration
 			designerFrame.CanFocus = true;
 			designerFrame.Shadow = ShadowType.Out;
 			designerFrame.BorderWidth = 1;
+			
+			domTree = new MainDomTree ();
 		}
 		
 		public override Gtk.Widget Control {
@@ -60,70 +66,44 @@ namespace AspNetEdit2.Integration
 			get { return "Browser Preview"; }
 		}
 		
-		private bool viewDisposed;
+//		private bool viewDisposed;
 		
 		public override void Selected ()
 		{
-			this.view = new WebView ();
-			designerFrame.Add (view);
-			designerFrame.ShowAll ();
+//			this.view = new WebView ();
+//			designerFrame.Add (view);
+//			designerFrame.ShowAll ();
 			
 			SourceEditorView tempView = viewContent as SourceEditorView;
 			if (tempView != null) {
 				
-				// Just trying out how the parser works and what is it's output
-				#region Testing_AspNetParser
-				/*
-				AspParser testParser = null;
+				domTree.BuildTree (null, tempView.Text);
 				
-				using (StringReader strRd = new StringReader (tempView.Text)) {
-					testParser = new AspParser (null, strRd);
-				}
+				domTree.DisplayEditor (designerFrame);
 				
-				testParser.TagParsed += new TagParsedHandler (TagParsed);
-				
-				testParser.Parse ();
-				*/
-				
-				AspNetParser parser = new AspNetParser ();
-				
-				StringReader reader = new StringReader (tempView.Text);
-				
-				AspNetParsedDocument parsedDocument = (AspNetParsedDocument)parser.Parse (true, null, reader, null);	
-				
-				foreach (Node n in parsedDocument.RootNode) {
-				
-					string something = n.ToString ();
-					
-				}
-				
-				#endregion
-				
-				view.LoadString (tempView.Text, null, null, null);
-				view.Show();
-				viewDisposed = false;
+//				view.LoadString (tempView.Text, null, null, null);
+//				view.Show();
+//				viewDisposed = false;
 
 			}
 			
 		}
-		/*
-		void TagParsed (ILocation location, TagType tagtype, string tagid, TagAttributes attributes)
-		{
-			
-		}
-		*/
+		
 		public override void Deselected ()
 		{
-			designerFrame.Remove(view);
-			view.Dispose();
-			viewDisposed = true;
+//			designerFrame.Remove(view);
+//			view.Dispose();
+//			viewDisposed = true;
 		}
 		
 		public override void Dispose ()
 		{
-			designerFrame.Remove(view);
-			if (!viewDisposed)
-				this.view.Dispose ();
+//			designerFrame.Remove(view);
+//			if (!viewDisposed)
+//				this.view.Dispose ();
+			
+			designerFrame.Dispose ();
+			domTree.CleanUp ();
 		}
 	}
 }
