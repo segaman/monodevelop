@@ -25,20 +25,21 @@
 // THE SOFTWARE.
 
 using System;
-using System.IO;
-using System.Text;
 using System.Linq;
-using Mono.TextEditor;
 using MonoDevelop.AspNet.Parser.Dom;
 using MonoDevelop.AspNet.Gui;
+using System.Text;
 using System.Collections.Generic;
 using MonoDevelop.Ide.CodeCompletion;
 using MonoDevelop.Ide.Gui;
-using MonoDevelop.Ide.TypeSystem;
-using MonoDevelop.CSharp.Parser;
-using ICSharpCode.NRefactory.Completion;
-using ICSharpCode.NRefactory.TypeSystem;
+using Mono.TextEditor;
 using ICSharpCode.OldNRefactory;
+using MonoDevelop.Ide.TypeSystem;
+using ICSharpCode.NRefactory.TypeSystem;
+using MonoDevelop.CSharp.Parser;
+using System.IO;
+using ICSharpCode.NRefactory.Completion;
+
 
 
 namespace MonoDevelop.CSharp.Completion
