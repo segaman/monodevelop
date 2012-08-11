@@ -38,8 +38,8 @@ using MonoDevelop.Core;
 
 namespace MonoDevelop.AspNet
 {
-	
-	
+
+	[MonoDevelop.Core.Execution.AddinDependency ("MonoDevelop.AspNet")]
 	public class AspNetToolboxLoader : ToolboxItemToolboxLoader
 	{
 		
@@ -95,6 +95,8 @@ namespace MonoDevelop.AspNet
 				node.ItemFilters.Add (new ToolboxItemFilterAttribute ("ClrVersion.Net_1_1", ToolboxItemFilterType.Require));
 			} else if (referencedRuntime == MonoDevelop.Core.ClrVersion.Net_2_0) {
 				node.ItemFilters.Add (new ToolboxItemFilterAttribute ("ClrVersion.Net_2_0", ToolboxItemFilterType.Require));
+			} else if (referencedRuntime == MonoDevelop.Core.ClrVersion.Net_4_0) {
+				node.ItemFilters.Add (new ToolboxItemFilterAttribute ("ClrVersion.Net_4_0", ToolboxItemFilterType.Require));
 			}
 			
 			return node;

@@ -89,6 +89,11 @@ namespace MonoDevelop.DesignerSupport.Toolbox
 				throw new InvalidOperationException ("Type '" + loaderType + "' does not implement 'IExternalToolboxLoader'");
 			try {
 				ExternalItemLoader loader = CreateExternalLoader<ExternalItemLoader> (runtime);
+				object[] dependencies = loaderType.GetCustomAttributes (typeof (AddinDependencyAttribute), true);
+				foreach (object dep in dependencies) {
+					var addinAttr = dep as AddinDependencyAttribute;
+					loader.LoadAddin (addinAttr.Addin);
+				}
 				string s = loader.LoadItems (loaderType.Assembly.FullName, loaderType.FullName, filename);
 				XmlDataSerializer ser = new XmlDataSerializer (MonoDevelop.Projects.Services.ProjectService.DataContext);
 				ToolboxList list = (ToolboxList) ser.Deserialize (new StringReader (s), typeof(ToolboxList));
@@ -153,6 +158,11 @@ namespace MonoDevelop.DesignerSupport.Toolbox
 			StringWriter sw = new StringWriter ();
 			ser.Serialize (sw, tl);
 			return sw.ToString ();
+		}
+
+		public void LoadAddin (string addinId)
+		{
+			Mono.Addins.AddinManager.LoadAddin (null, addinId);
 		}
 	}
 }
