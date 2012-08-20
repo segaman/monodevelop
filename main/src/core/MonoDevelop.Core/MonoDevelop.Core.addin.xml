@@ -12,6 +12,7 @@
 	<ConditionType id="PackageInstalled" type="MonoDevelop.Core.AddIns.PackageInstalledCondition" />
 	<ConditionType id="PackageNotInstalled" type="MonoDevelop.Core.AddIns.PackageNotInstalledCondition" />
 	<ConditionType id="Platform" type="MonoDevelop.Core.AddIns.PlatformCondition" />
+	<ConditionType id="AssemblyInstalled" type="MonoDevelop.Core.AddIns.AssemblyInstalledCondition" />
 
 	
 	<!-- Extension points -->
@@ -56,6 +57,10 @@
 		<ExtensionNode name = "Class" objectType = "MonoDevelop.Core.IPasswordProvider" />
 	</ExtensionPoint>
 	
+	<ExtensionPoint path = "/MonoDevelop/Core/WebCertificateProvider" name = "API for determining if an SSL Certificate should be trusted">
+		<ExtensionNode name = "Class" objectType = "MonoDevelop.Core.IWebCertificateProvider" />
+	</ExtensionPoint>
+
 	<ExtensionPoint path = "/MonoDevelop/Core/Frameworks">
 		<Description>Target frameworks.</Description>
 		<ExtensionNode name="Framework" type="MonoDevelop.Core.AddIns.TargetFrameworkNode" objectType="MonoDevelop.Core.Assemblies.TargetFramework">
@@ -250,5 +255,4 @@
 			type = "MonoDevelop.Projects.CompiledAssemblyProject"
 			handlerType = "MonoDevelop.Projects.Formats.MSBuild.CompiledAssemblyProjectMSBuildHandler" />
 	</Extension>
-
 </Addin>
