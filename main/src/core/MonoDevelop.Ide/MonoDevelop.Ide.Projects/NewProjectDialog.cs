@@ -549,7 +549,10 @@ namespace MonoDevelop.Ide.Projects {
 
 			if (basePath == null)
 				basePath = IdeApp.ProjectOperations.ProjectsDefaultPath;
-				
+
+			if (entry_location == null)
+				entry_location = new FolderEntry();
+					
 			entry_location.Path = FileService.ResolveFullPath (basePath);
 			
 			PathChanged (null, null);
