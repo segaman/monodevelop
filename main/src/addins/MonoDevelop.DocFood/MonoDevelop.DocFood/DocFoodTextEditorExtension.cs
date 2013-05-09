@@ -23,7 +23,6 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
-
 using System;
 using MonoDevelop.Ide.Gui.Content;
 using Mono.TextEditor;
@@ -38,25 +37,23 @@ namespace MonoDevelop.DocFood
 {
 	public class DocFoodTextEditorExtension : TextEditorExtension
 	{
-		TextEditorData textEditorData;
-		
-		public override void Initialize ()
-		{
-			base.Initialize ();
-			textEditorData = Document.Editor;
+		TextEditorData textEditorData {
+			get {
+				return Document.Editor;
+			}
 		}
 		
 		string GenerateDocumentation (IEntity member, string indent)
 		{
 			string doc = DocumentBufferHandler.GenerateDocumentation (textEditorData, member, indent);
-			int trimStart = (Math.Min (doc.Length-1, indent.Length + "//".Length));
+			int trimStart = (Math.Min (doc.Length - 1, indent.Length + "//".Length));
 			return doc.Substring (trimStart).TrimEnd ('\n', '\r');
 		}
 		
 		string GenerateEmptyDocumentation (IEntity member, string indent)
 		{
 			string doc = DocumentBufferHandler.GenerateEmptyDocumentation (textEditorData, member, indent);
-			int trimStart = (Math.Min (doc.Length-1, indent.Length + "//".Length));
+			int trimStart = (Math.Min (doc.Length - 1, indent.Length + "//".Length));
 			return doc.Substring (trimStart).TrimEnd ('\n', '\r');
 		}
 
@@ -109,12 +106,46 @@ namespace MonoDevelop.DocFood
 			
 			using (var undo = textEditorData.OpenUndoGroup ()) {
 				insertedLength = textEditorData.Replace (offset, insertedLength, documentation);
-				textEditorData.Caret.Offset = offset + insertedLength;
+				if (SelectSummary (offset, insertedLength, documentation) == false)
+					textEditorData.Caret.Offset = offset + insertedLength;
 			}
 			return false;
 		}
 
-		
+		/// <summary>
+		/// Make the summary content selected
+		/// </summary>
+		/// <returns>
+		/// <c>true</c>, if summary was selected, <c>false</c> if summary was not found.
+		/// </returns>
+		/// <param name='offset'>
+		/// Offset in document where the documentation is inserted
+		/// </param>
+		/// <param name='documentation'>
+		/// Documentation containing the summary
+		/// </param>
+		bool SelectSummary (int offset, int insertedLength, string documentation)
+		{
+			//Adjust the line endings to what the document uses to assure correct offset within the documentation
+			if (insertedLength > documentation.Length)
+				documentation = documentation.Replace ("\n", "\r\n");
+
+			const string summaryStart = "<summary>";
+			const string summaryEnd = "</summary>";
+			int start = documentation.IndexOf (summaryStart);
+			int end = documentation.IndexOf (summaryEnd);
+			if (start < 0 || end < 0)
+				return false;
+			start += summaryStart.Length;
+			string summaryText = documentation.Substring (start, end - start).Trim (new char[] {' ', '\t', '\r', '\n', '/'});
+			start = documentation.IndexOf (summaryText, start);
+			if (start < 0)
+				return false;
+			textEditorData.Caret.Offset = offset + start;
+			textEditorData.SetSelection (offset + start, offset + start + summaryText.Length);
+			return true;
+		}
+
 		bool IsEmptyBetweenLines (int start, int end)
 		{
 			for (int i = start + 1; i < end - 1; i++) {

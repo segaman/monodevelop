@@ -29,6 +29,7 @@ using ICSharpCode.NRefactory.TypeSystem;
 using ICSharpCode.NRefactory.CSharp;
 using MonoDevelop.CodeIssues;
 using MonoDevelop.Ide;
+using Mono.TextEditor;
 
 namespace MonoDevelop.AnalysisCore.Fixes
 {
@@ -46,7 +47,7 @@ namespace MonoDevelop.AnalysisCore.Fixes
 		public override string OptionsTitle { get { return Inspector.Title; } }
 		public override void ShowResultOptionsDialog ()
 		{
-			MessageService.RunCustomDialog (new CodeIssueOptionsDialog (this), MessageService.RootWindow);
+			MessageService.RunCustomDialog (new CodeIssueOptionsDialog (Inspector), MessageService.RootWindow);
 		}
 		
 	}
@@ -65,7 +66,8 @@ namespace MonoDevelop.AnalysisCore.Fixes
 	{
 		Action fix;
 		string label;
-		
+		public DocumentRegion DocumentRegion { get; set; }
+
 		public GenericFix (string label, Action fix)
 		{
 			this.fix = fix;

@@ -74,6 +74,7 @@ namespace MonoDevelop.NUnit
 		ToggleButton buttonSuccess;
 		ToggleButton buttonFailures;
 		ToggleButton buttonIgnored;
+		ToggleButton buttonInconclusive;
 		ToggleButton buttonOutput;
 		
 		bool running;
@@ -128,7 +129,7 @@ namespace MonoDevelop.NUnit
 			sw.Add (failuresTreeView);
 			book.Pack1 (sw, true, true);
 			
-			outputView = new TextView ();
+			outputView = new MonoDevelop.Ide.Gui.Components.LogView.LogTextView ();
 			outputView.Editable = false;
 			bold = new TextTag ("bold");
 			bold.Weight = Pango.Weight.Bold;
@@ -165,6 +166,15 @@ namespace MonoDevelop.NUnit
 			buttonSuccess.Toggled += new EventHandler (OnShowSuccessfulToggled);
 			buttonSuccess.TooltipText = GettextCatalog.GetString ("Show Successful Tests");
 			toolbar.Add (buttonSuccess);
+
+			buttonInconclusive = new ToggleButton ();
+			buttonInconclusive.Label = GettextCatalog.GetString ("Inconclusive Tests");
+			buttonInconclusive.Active = true;
+			buttonInconclusive.Image = new Gtk.Image (CircleImage.Inconclusive);
+			buttonInconclusive.Image.Show ();
+			buttonInconclusive.Toggled += new EventHandler (OnShowInconclusiveToggled);
+			buttonInconclusive.TooltipText = GettextCatalog.GetString ("Show Inconclusive Tests");
+			toolbar.Add (buttonInconclusive);
 			
 			buttonFailures = new ToggleButton ();
 			buttonFailures.Label = GettextCatalog.GetString ("Failed Tests");
@@ -174,7 +184,7 @@ namespace MonoDevelop.NUnit
 			buttonFailures.Toggled += new EventHandler (OnShowFailuresToggled);
 			buttonFailures.TooltipText = GettextCatalog.GetString ("Show Failed Tests");
 			toolbar.Add (buttonFailures);
-			
+
 			buttonIgnored = new ToggleButton ();
 			buttonIgnored.Label = GettextCatalog.GetString ("Ignored Tests");
 			buttonIgnored.Active = true;
@@ -244,6 +254,9 @@ namespace MonoDevelop.NUnit
 		
 		public void OnTestSuiteChanged (object sender, EventArgs e)
 		{
+			if (failuresTreeView.IsRealized)
+				failuresTreeView.ScrollToPoint (0, 0);
+
 			results.Clear ();
 			
 			error = null;
@@ -315,6 +328,9 @@ namespace MonoDevelop.NUnit
 			labels.Show ();
 			buttonStop.Sensitive = true;
 			buttonRun.Sensitive = false;
+
+			if (failuresTreeView.IsRealized)
+				failuresTreeView.ScrollToPoint (0, 0);
 			
 			failuresStore.Clear ();
 			outputView.Buffer.Clear ();
@@ -525,8 +541,13 @@ namespace MonoDevelop.NUnit
 		{
 			RefreshList ();
 		}
-
+		
 		void OnShowFailuresToggled (object sender, EventArgs args)
+		{
+			RefreshList ();
+		}
+		
+		void OnShowInconclusiveToggled (object sender, EventArgs args)
 		{
 			RefreshList ();
 		}
@@ -543,6 +564,9 @@ namespace MonoDevelop.NUnit
 		
 		void RefreshList ()
 		{
+			if (failuresTreeView.IsRealized)
+				failuresTreeView.ScrollToPoint (0, 0);
+
 			failuresStore.Clear ();
 			outputView.Buffer.Clear ();
 			outIters.Clear ();
@@ -584,6 +608,14 @@ namespace MonoDevelop.NUnit
 				if (!buttonIgnored.Active)
 					return;
 				TreeIter testRow = failuresStore.AppendValues (CircleImage.NotRun, Escape (test.FullName), test);
+				if (result.Message != null)
+					failuresStore.AppendValues (testRow, null, Escape (result.Message), test);
+				failuresTreeView.ScrollToCell (failuresStore.GetPath (testRow), null, false, 0, 0);
+			}
+			if (result.IsInconclusive) {
+				if (!buttonInconclusive.Active)
+					return;
+				TreeIter testRow = failuresStore.AppendValues (CircleImage.Inconclusive, Escape (test.FullName), test);
 				if (result.Message != null)
 					failuresStore.AppendValues (testRow, null, Escape (result.Message), test);
 				failuresTreeView.ScrollToCell (failuresStore.GetPath (testRow), null, false, 0, 0);

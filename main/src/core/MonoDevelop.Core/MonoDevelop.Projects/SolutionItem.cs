@@ -38,6 +38,7 @@ using MonoDevelop.Core.Collections;
 using MonoDevelop.Core.StringParsing;
 using MonoDevelop.Core.Instrumentation;
 using MonoDevelop.Projects.Policies;
+using MonoDevelop.Core.Execution;
 
 namespace MonoDevelop.Projects
 {
@@ -178,6 +179,7 @@ namespace MonoDevelop.Projects
 			}
 			internal set {
 				parentSolution = value;
+				NotifyBoundToSolution (true);
 			}
 		}
 
@@ -364,10 +366,35 @@ namespace MonoDevelop.Projects
 			}
 			internal set {
 				parentFolder = value;
-				if (internalChildren != null)
+				if (internalChildren != null) {
 					internalChildren.ParentFolder = value;
+				}
+				if (value != null && value.ParentSolution != null) {
+					NotifyBoundToSolution (false);
+				}
 			}
 		}
+
+		// Normally, the ParentFolder setter fires OnBoundToSolution. However, when deserializing, child
+		// ParentFolder hierarchies can become connected before the ParentSolution becomes set. This method
+		// enables us to recursively fire the OnBoundToSolution call in those cases.
+		void NotifyBoundToSolution (bool includeInternalChildren)
+		{
+			var folder = this as SolutionFolder;
+			if (folder != null) {
+				var items = folder.GetItemsWithoutCreating ();
+				if (items != null) {
+					foreach (var item in items) {
+						item.NotifyBoundToSolution (includeInternalChildren);
+					}
+				}
+			}
+			if (includeInternalChildren && internalChildren != null) {
+				internalChildren.NotifyBoundToSolution (includeInternalChildren);
+			}
+			OnBoundToSolution ();
+		}
+
 
 		/// <summary>
 		/// Gets a value indicating whether this <see cref="MonoDevelop.Projects.SolutionItem"/> has been disposed.
@@ -513,9 +540,6 @@ namespace MonoDevelop.Projects
 			ITimeTracker tt = Counters.BuildProjectTimer.BeginTiming ("Building " + Name);
 			try {
 				if (!buildReferences) {
-					if (!NeedsBuilding (solutionConfiguration))
-						return new BuildResult (new CompilerResults (null), "");
-					
 					//SolutionFolder's OnRunTarget handles the begin/end task itself, don't duplicate
 					if (this is SolutionFolder) {
 						return RunTarget (monitor, ProjectService.BuildTarget, solutionConfiguration);
@@ -550,7 +574,7 @@ namespace MonoDevelop.Projects
 				
 				monitor.BeginTask (null, sortedReferenced.Count);
 				foreach (SolutionItem p in sortedReferenced) {
-					if (p.NeedsBuilding (solutionConfiguration) && !p.ContainsReferences (failedItems, solutionConfiguration)) {
+					if (!p.ContainsReferences (failedItems, solutionConfiguration)) {
 						BuildResult res = p.Build (monitor, solutionConfiguration, false);
 						cres.Append (res);
 						if (res.ErrorCount > 0)
@@ -595,8 +619,7 @@ namespace MonoDevelop.Projects
 			if (!visited.Add(item))
 				return;
 			
-			if (item.NeedsBuilding (configuration))
-				referenced.Add (item);
+			referenced.Add (item);
 
 			foreach (SolutionItem ritem in item.GetReferencedItems (configuration))
 				GetBuildableReferencedItems (visited, referenced, ritem, configuration);
@@ -635,6 +658,24 @@ namespace MonoDevelop.Projects
 		{
 			return Services.ProjectService.GetExtensionChain (this).CanExecute (this, context, configuration);
 		}
+
+		/// <summary>
+		/// Gets the execution targets.
+		/// </summary>
+		/// <returns>The execution targets.</returns>
+		/// <param name="configuration">The configuration.</param>
+		public IEnumerable<ExecutionTarget> GetExecutionTargets (ConfigurationSelector configuration)
+		{
+			return Services.ProjectService.GetExtensionChain (this).GetExecutionTargets (this, configuration);
+		}
+
+		public event EventHandler ExecutionTargetsChanged;
+
+		protected virtual void OnExecutionTargetsChanged ()
+		{
+			if (ExecutionTargetsChanged != null)
+				ExecutionTargetsChanged (this, EventArgs.Empty);
+		}
 		
 		/// <summary>
 		/// Checks if this solution item has modified files and has to be built
@@ -645,16 +686,10 @@ namespace MonoDevelop.Projects
 		/// <param name='configuration'>
 		/// Configuration for which to do the check
 		/// </param>
+		[Obsolete ("This method will be removed in future releases")]
 		public bool NeedsBuilding (ConfigurationSelector configuration)
 		{
-			using (Counters.NeedsBuildingTimer.BeginTiming ("NeedsBuilding check for " + Name)) {
-				if (ParentSolution != null && this is SolutionEntityItem) {
-					SolutionConfiguration sconf = ParentSolution.GetConfiguration (configuration);
-					if (sconf != null && !sconf.BuildEnabledForItem ((SolutionEntityItem) this))
-						return false;
-				}
-				return Services.ProjectService.GetExtensionChain (this).GetNeedsBuilding (this, configuration);
-			}
+			return true;
 		}
 		
 		/// <summary>
@@ -666,9 +701,10 @@ namespace MonoDevelop.Projects
 		/// <param name='configuration'>
 		/// Configuration for which to set the flag
 		/// </param>
+		[Obsolete ("This method will be removed in future releases")]
 		public void SetNeedsBuilding (bool value, ConfigurationSelector configuration)
 		{
-			Services.ProjectService.GetExtensionChain (this).SetNeedsBuilding (this, value, configuration);
+			// Nothing to be done.
 		}
 		
 		/// <summary>
@@ -970,7 +1006,10 @@ namespace MonoDevelop.Projects
 		/// <param name='configuration'>
 		/// Configuration for which to do the check
 		/// </param>
-		internal protected abstract bool OnGetNeedsBuilding (ConfigurationSelector configuration);
+		internal protected virtual bool OnGetNeedsBuilding (ConfigurationSelector configuration)
+		{
+			return true;
+		}
 		
 		/// <summary>
 		/// States whether this solution item needs to be built or not
@@ -981,7 +1020,9 @@ namespace MonoDevelop.Projects
 		/// <param name='configuration'>
 		/// Configuration for which to set the flag
 		/// </param>
-		internal protected abstract void OnSetNeedsBuilding (bool val, ConfigurationSelector configuration);
+		internal protected virtual void OnSetNeedsBuilding (bool val, ConfigurationSelector configuration)
+		{
+		}
 		
 		/// <summary>
 		/// Gets the time of the last build
@@ -1012,6 +1053,15 @@ namespace MonoDevelop.Projects
 		internal protected virtual bool OnGetCanExecute (ExecutionContext context, ConfigurationSelector configuration)
 		{
 			return false;
+		}
+
+		internal protected virtual IEnumerable<ExecutionTarget> OnGetExecutionTargets (ConfigurationSelector configuration)
+		{
+			yield break;
+		}
+
+		protected virtual void OnBoundToSolution ()
+		{
 		}
 		
 		/// <summary>

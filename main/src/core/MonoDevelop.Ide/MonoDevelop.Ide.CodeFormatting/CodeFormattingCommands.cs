@@ -60,12 +60,7 @@ namespace MonoDevelop.Ide.CodeFormatting
 			if (formatter == null)
 				return;
 			using (var undo = doc.Editor.OpenUndoGroup ()) {
-				var loc = doc.Editor.Caret.Location;
-				var text = formatter.FormatText (doc.Project != null ? doc.Project.Policies : null, doc.Editor.Text);
-				if (text != null) {
-					doc.Editor.Replace (0, doc.Editor.Length, text);
-					doc.Editor.Caret.Location = loc;
-				}
+				formatter.OnTheFlyFormat (doc, 0, doc.Editor.Length);
 			}
 		}
 	}
@@ -78,7 +73,7 @@ namespace MonoDevelop.Ide.CodeFormatting
 				string mt = DesktopService.GetMimeTypeForUri (IdeApp.Workbench.ActiveDocument.FileName);
 				var formatter = CodeFormatterService.GetFormatter (mt);
 				if (formatter != null && !formatter.IsDefault) {
-					info.Enabled = IdeApp.Workbench.ActiveDocument.Editor.IsSomethingSelected;
+					info.Enabled = true;
 					return;
 				}
 			}
@@ -92,28 +87,34 @@ namespace MonoDevelop.Ide.CodeFormatting
 				return;
 			string mt = DesktopService.GetMimeTypeForUri (doc.FileName);
 			var formatter = CodeFormatterService.GetFormatter (mt);
-			if (formatter == null || !doc.Editor.IsSomethingSelected)
+			if (formatter == null)
 				return;
-			var selection = doc.Editor.SelectionRange;
+			Mono.TextEditor.TextSegment selection;
+			var editor = doc.Editor;
+			if (editor.IsSomethingSelected) {
+				selection = editor.SelectionRange;
+			} else {
+				selection = editor.GetLine (editor.Caret.Line).Segment;
+			}
 			
-			using (var undo = doc.Editor.OpenUndoGroup ()) {
-				var version = doc.Editor.Version;
+			using (var undo = editor.OpenUndoGroup ()) {
+				var version = editor.Version;
 
 				if (formatter.SupportsOnTheFlyFormatting) {
 					formatter.OnTheFlyFormat (doc, selection.Offset, selection.EndOffset);
 				} else {
 					var pol = doc.Project != null ? doc.Project.Policies : null;
-					string text = formatter.FormatText (pol, doc.Editor.Text, selection.Offset, selection.EndOffset);
+					string text = formatter.FormatText (pol, editor.Text, selection.Offset, selection.EndOffset);
 					if (text != null) {
-						doc.Editor.Replace (selection.Offset, selection.Length, text);
+						editor.Replace (selection.Offset, selection.Length, text);
 					}
 				}
 
-				int newOffset = version.MoveOffsetTo (doc.Editor.Version, selection.Offset);
-				int newEndOffset = version.MoveOffsetTo (doc.Editor.Version, selection.EndOffset);
-				
-				doc.Editor.SetSelection (newOffset, newEndOffset);
-
+				if (editor.IsSomethingSelected) { 
+					int newOffset = version.MoveOffsetTo (editor.Version, selection.Offset);
+					int newEndOffset = version.MoveOffsetTo (editor.Version, selection.EndOffset);
+					editor.SetSelection (newOffset, newEndOffset);
+				}
 			}
 		}
 	}

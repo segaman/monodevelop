@@ -117,6 +117,24 @@ namespace MonoDevelop.Projects
 			}
 		}
 
+		[ProjectPathItemProperty ("BaseIntermediateOutputPath")]
+		FilePath baseIntermediateOutputPath;
+
+		public virtual FilePath BaseIntermediateOutputPath {
+			get {
+				if (!baseIntermediateOutputPath.IsNullOrEmpty)
+					return baseIntermediateOutputPath;
+				return BaseDirectory.Combine ("obj");
+			}
+			set {
+				if (value.IsNullOrEmpty)
+					value = FilePath.Null;
+				if (baseIntermediateOutputPath == value)
+					return;
+				NotifyModified ("BaseIntermediateOutputPath");
+			}
+		}
+
 		/// <summary>
 		/// Gets the type of the project.
 		/// </summary>
@@ -391,7 +409,7 @@ namespace MonoDevelop.Projects
 		bool UsingMSBuildEngine ()
 		{
 			var msbuildHandler = ItemHandler as MonoDevelop.Projects.Formats.MSBuild.MSBuildProjectHandler;
-			return msbuildHandler != null && msbuildHandler.UseXbuild;
+			return msbuildHandler != null && msbuildHandler.UseMSBuildEngine;
 		}
 
 		protected override BuildResult OnBuild (IProgressMonitor monitor, ConfigurationSelector configuration)
@@ -665,18 +683,6 @@ namespace MonoDevelop.Projects
 			ItemHandler.RunTarget (monitor, "Clean", configuration);
 		}
 
-		void GetBuildableReferencedItems (List<SolutionItem> referenced, SolutionItem item, ConfigurationSelector configuration)
-		{
-			if (referenced.Contains (item))
-				return;
-
-			if (item.NeedsBuilding (configuration))
-				referenced.Add (item);
-
-			foreach (SolutionItem ritem in item.GetReferencedItems (configuration))
-				GetBuildableReferencedItems (referenced, ritem, configuration);
-		}
-
 		protected internal override void OnExecute (IProgressMonitor monitor, ExecutionContext context, ConfigurationSelector configuration)
 		{
 			ProjectConfiguration config = GetConfiguration (configuration) as ProjectConfiguration;
@@ -737,6 +743,11 @@ namespace MonoDevelop.Projects
 				isDirty = true;
 		}
 
+		internal bool InternalCheckNeedsBuild (ConfigurationSelector configuration)
+		{
+			return CheckNeedsBuild (configuration);
+		}
+
 		/// <summary>
 		/// Checks if the project needs to be built
 		/// </summary>
@@ -764,7 +775,7 @@ namespace MonoDevelop.Projects
 			}
 
 			foreach (SolutionItem pref in GetReferencedItems (configuration)) {
-				if (pref.GetLastBuildTime (configuration) > tim || pref.NeedsBuilding (configuration))
+				if (pref.GetLastBuildTime (configuration) > tim)
 					return true;
 			}
 

@@ -25,25 +25,14 @@
 // THE SOFTWARE.
 
 using System;
-using System.Linq;
 using System.Collections.Generic;
-using System.Diagnostics;
-using MonoDevelop.Core;
-using MonoDevelop.Projects;
-using MonoDevelop.Ide.Gui.Content;
-using MonoDevelop.AspNet;
 using MonoDevelop.AspNet.Parser;
-using MonoDevelop.AspNet.Parser.Dom;
-using MonoDevelop.Html;
-using MonoDevelop.DesignerSupport;
 using S = MonoDevelop.Xml.StateEngine;
 using MonoDevelop.AspNet.StateEngine;
-using System.Text;
 using Mono.TextEditor;
 using MonoDevelop.Ide.TypeSystem;
 using ICSharpCode.NRefactory.TypeSystem;
 using MonoDevelop.Ide.CodeCompletion;
-using ICSharpCode.NRefactory.Completion;
 
 namespace MonoDevelop.AspNet.Gui
 {
@@ -104,19 +93,12 @@ namespace MonoDevelop.AspNet.Gui
 			this.AspNetDocument = aspNetParsedDocument;
 			this.Imports = imports;
 			this.References = references;
-			ScriptBlocks = new List<TagNode> ();
-			Expressions = new List<ExpressionNode> ();
-			//aspNetParsedDocument.RootNode.AcceptVisit (new ExpressionCollector (this));
 			BuildExpressionAndScriptsLists ();
 		}
 		
 		public ICompilation Dom { get; private set; }
 		public AspNetParsedDocument AspNetDocument { get; private set; }
 		public ParsedDocument ParsedDocument { get; set; }
-		[Obsolete ("Use XEpressions instead")]
-		public List<ExpressionNode> Expressions { get; private set; }
-		[Obsolete ("Use XScriptBlocks instead")]
-		public List<TagNode> ScriptBlocks { get; private set; }
 		public IList<ICompilation> References { get; set; }
 		public IEnumerable<string> Imports { get; private set; }
 		
@@ -151,46 +133,27 @@ namespace MonoDevelop.AspNet.Gui
 		
 		#region parsing for expression and runat="server" script tags
 		
-		public List<AspNetExpression> XExpressions { get; private set; }
+		public List<S.XNode> XExpressions { get; private set; }
 		public List<S.XElement> XScriptBlocks { get; private set; }
 		
 		void BuildExpressionAndScriptsLists ()
 		{
-			XExpressions = new List<AspNetExpression> ();
+			XExpressions = new List<S.XNode> ();
 			XScriptBlocks = new List<S.XElement> ();
 			
-			foreach (S.XNode node in AspNetDocument.XDocument.AllDescendentNodes)
-				AddElement (node);
-		}
-		
-		void AddElement (S.XNode node)
-		{
-			if (node is AspNetExpression) {
-				XExpressions.Add (node as AspNetExpression);
-				
-			} else if (node is S.XElement) {
+			foreach (S.XNode node in AspNetDocument.XDocument.AllDescendentNodes) {
+				if (node is AspNetRenderExpression || node is AspNetHtmlEncodedExpression || node is AspNetRenderBlock) {
+					XExpressions.Add (node);
+					continue;
+				}
 				S.XElement el = node as S.XElement;
-				
-				if (IsServerScriptTag (el)) {
-					XScriptBlocks.Add (el);
-					
-				} else {
-					foreach (S.XNode nd in el.Nodes) 
-						AddElement (nd);
+				if (el == null) {
+					continue;
+				}
+				if (el.IsServerScriptTag ()) {
+					XScriptBlocks.Add (el);	
 				}
 			}
-		}
-		
-		bool IsServerScriptTag (S.XElement el)
-		{
-			if (el.Name.FullName == "script") {
-				S.XName runat = new S.XName ("runat");
-				foreach (S.XAttribute attr in el.Attributes) {
-					if ((attr.Name.ToLower () == runat) && (attr.Value.ToLower () == "server"))
-						return true;
-				}
-			}
-			return false;
 		}
 		
 		#endregion
@@ -211,7 +174,7 @@ namespace MonoDevelop.AspNet.Gui
 		
 		ICompletionDataList HandlePopupCompletion (MonoDevelop.Ide.Gui.Document realDocument, DocumentInfo info, LocalDocumentInfo localInfo);
 		ICompletionDataList HandleCompletion (MonoDevelop.Ide.Gui.Document realDocument, CodeCompletionContext completionContext, DocumentInfo info, LocalDocumentInfo localInfo, char currentChar, ref int triggerWordLength);
-		IParameterDataProvider HandleParameterCompletion (MonoDevelop.Ide.Gui.Document realDocument, CodeCompletionContext completionContext, DocumentInfo info, LocalDocumentInfo localInfo, char completionChar);
+		ParameterDataProvider HandleParameterCompletion (MonoDevelop.Ide.Gui.Document realDocument, CodeCompletionContext completionContext, DocumentInfo info, LocalDocumentInfo localInfo, char completionChar);
 		bool GetParameterCompletionCommandOffset (MonoDevelop.Ide.Gui.Document realDocument, DocumentInfo info, LocalDocumentInfo localInfo, out int cpos);
 	}
 	

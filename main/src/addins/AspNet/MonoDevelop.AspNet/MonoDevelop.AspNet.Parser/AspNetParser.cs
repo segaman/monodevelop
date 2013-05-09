@@ -39,7 +39,7 @@ using MonoDevelop.AspNet.StateEngine;
 
 namespace MonoDevelop.AspNet.Parser
 {
-	public class AspNetParser : AbstractTypeSystemParser
+	public class AspNetParser : TypeSystemParser
 	{
 		public override ParsedDocument Parse (bool storeAst, string fileName, TextReader tr, Project project = null)
 		{
@@ -77,21 +77,6 @@ namespace MonoDevelop.AspNet.Parser
 			
 			var result = new AspNetParsedDocument (fileName, type, info, xDoc);
 			result.Add (errors);
-							
-			/*
-			if (MonoDevelop.Core.LoggingService.IsLevelEnabled (MonoDevelop.Core.Logging.LogLevel.Debug)) {
-				DebugStringVisitor dbg = new DebugStringVisitor ();
-				rootNode.AcceptVisit (dbg);
-				System.Text.StringBuilder sb = new System.Text.StringBuilder ();
-				sb.AppendLine ("Parsed AspNet file:");
-				sb.AppendLine (dbg.DebugString);
-				if (errors.Count > 0) {
-					sb.AppendLine ("Errors:");
-					foreach (ParserException ex in errors)
-						sb.AppendLine (ex.ToString ());
-				}
-				MonoDevelop.Core.LoggingService.LogDebug (sb.ToString ());
-			}*/
 			
 			return result;
 		}

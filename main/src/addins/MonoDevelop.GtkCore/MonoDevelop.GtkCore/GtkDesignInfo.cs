@@ -121,14 +121,14 @@ namespace MonoDevelop.GtkCore
 							UpdateGtkFolder ();
 							ProjectNodeBuilder.OnSupportChanged (project);
 						}
-						builderProject = new GuiBuilderProject (project, SteticFile);
+						builderProject = GuiBuilderService.CreateBuilderProject (project, SteticFile);
 					} else
-						builderProject = new GuiBuilderProject (project, null);
+						builderProject = GuiBuilderService.CreateBuilderProject (project, null);
 				}
 				return builderProject;
 			}
 		}
-		
+
 		public ReferenceManager ReferenceManager {
 			get {
 				if (referenceManager == null)
@@ -235,7 +235,6 @@ namespace MonoDevelop.GtkCore
 			try {
 				FileInfo fi = new FileInfo (SteticFile);
 				fi.LastWriteTime = DateTime.Now;
-				project.SetNeedsBuilding (true);
 			} catch {
 				// Ignore errors here
 			}

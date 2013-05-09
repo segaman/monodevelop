@@ -29,6 +29,7 @@
 using System;
 using System.Collections;
 using System.IO;
+using System.Linq;
 using MonoDevelop.Core;
 using MonoDevelop.Core.Serialization;
 using MonoDevelop.Core.Assemblies;
@@ -69,6 +70,14 @@ namespace MonoDevelop.Projects
 			get { return signAssembly; }
 			set { signAssembly = value; }
 		}
+		
+		[MonoDevelop.Projects.Formats.MSBuild.MergeToProject]
+		[ItemProperty("DelaySign", DefaultValue = false)]
+		private bool delaySign = false;
+		public bool DelaySign {
+			get { return delaySign; }
+			set { delaySign = value; }
+		}
 
 		[MonoDevelop.Projects.Formats.MSBuild.MergeToProject]
 		[ProjectPathItemProperty("AssemblyKeyFile", ReadOnly=true)]
@@ -98,7 +107,21 @@ namespace MonoDevelop.Projects
 					return CompileTarget.Library;
 			}
 		}
-		
+
+		public override SolutionItemConfiguration FindBestMatch (SolutionItemConfigurationCollection configurations)
+		{
+			// Get all configurations with the same value for the 'DEBUG' symbol
+			var matches = configurations.OfType<DotNetProjectConfiguration> ().Where (c =>
+				c.CompilationParameters.HasDefineSymbol ("DEBUG") == compilationParameters.HasDefineSymbol ("DEBUG")
+			).ToArray ();
+
+			// If the base method can't find a direct match then try to match based on finding a configuration
+			// with a matching value for the 'DEBUG' symbol and some other heuristics
+			return base.FindBestMatch (configurations)
+				?? matches.FirstOrDefault (c => Platform == c.Platform)
+				?? matches.FirstOrDefault (c => c.Platform == "");
+		}
+
 		public TargetFramework TargetFramework {
 			get {
 				DotNetProject prj = ParentItem as DotNetProject;
@@ -166,6 +189,7 @@ namespace MonoDevelop.Projects
 				SetParentItem (conf.ParentItem);
 			CompilationParameters = conf.compilationParameters != null ? conf.compilationParameters.Clone () : null;
 			signAssembly = conf.signAssembly;
+			delaySign = conf.delaySign;
 			assemblyKeyFile = conf.assemblyKeyFile;
 		}
 		
@@ -182,7 +206,12 @@ namespace MonoDevelop.Projects
 		{
 			// Do nothing
 		}
-		
+
+		public override bool HasDefineSymbol (string symbol)
+		{
+			return false;
+		}
+
 		public override void RemoveDefineSymbol (string symbol)
 		{
 			// Do nothing

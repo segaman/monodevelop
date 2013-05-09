@@ -1,9 +1,10 @@
 // DebugValueTooltipProvider.cs
 //
-// Author:
-//   Lluis Sanchez Gual <lluis@novell.com>
+// Authors: Lluis Sanchez Gual <lluis@novell.com>
+//          Jeffrey Stedfast <jeff@xamarin.com>
 //
 // Copyright (c) 2008 Novell, Inc (http://www.novell.com)
+// Copyright (c) 2012 Xamarin Inc. (http://www.xamarin.com)
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -27,11 +28,11 @@
 
 using System;
 using System.Collections.Generic;
+
 using Mono.TextEditor;
-using MonoDevelop.Ide.Gui;
+using MonoDevelop.Components;
 using Mono.Debugging.Client;
 using TextEditor = Mono.TextEditor.TextEditor;
-using MonoDevelop.Ide.CodeCompletion;
 using MonoDevelop.Debugger;
 
 using ICSharpCode.NRefactory.TypeSystem;
@@ -39,24 +40,53 @@ using ICSharpCode.NRefactory.Semantics;
 
 namespace MonoDevelop.SourceEditor
 {
-	public class DebugValueTooltipProvider: ITooltipProvider, IDisposable
+	public class DebugValueTooltipProvider: TooltipProvider, IDisposable
 	{
 		Dictionary<string,ObjectValue> cachedValues = new Dictionary<string,ObjectValue> ();
+		DebugValueWindow tooltip;
 		
-		public DebugValueTooltipProvider()
+		public DebugValueTooltipProvider ()
 		{
-			DebuggingService.CurrentFrameChanged += HandleCurrentFrameChanged;
+			DebuggingService.CurrentFrameChanged += CurrentFrameChanged;
+			DebuggingService.DebugSessionStarted += DebugSessionStarted;
 		}
 
-		void HandleCurrentFrameChanged (object sender, EventArgs e)
+		void DebugSessionStarted (object sender, EventArgs e)
+		{
+			DebuggingService.DebuggerSession.TargetExited += TargetProcessExited;
+		}
+
+		void CurrentFrameChanged (object sender, EventArgs e)
 		{
 			// Clear the cached values every time the current frame changes
 			cachedValues.Clear ();
+
+			if (tooltip != null)
+				tooltip.Hide ();
 		}
 
-		#region ITooltipProvider implementation 
+		void TargetProcessExited (object sender, EventArgs e)
+		{
+			if (tooltip != null)
+				tooltip.Hide ();
+		}
+
+		#region ITooltipProvider implementation
+
+		static int IndexOfLastWhiteSpace (string text)
+		{
+			int index = text.Length - 1;
+
+			while (index >= 0) {
+				if (char.IsWhiteSpace (text[index]))
+					break;
+				index--;
+			}
+
+			return index;
+		}
 		
-		public TooltipItem GetItem (Mono.TextEditor.TextEditor editor, int offset)
+		public override TooltipItem GetItem (TextEditor editor, int offset)
 		{
 			if (offset >= editor.Document.TextLength)
 				return null;
@@ -77,7 +107,7 @@ namespace MonoDevelop.SourceEditor
 				startOffset = ed.SelectionRange.Offset;
 				length = ed.SelectionRange.Length;
 			} else {
-				ICSharpCode.NRefactory.TypeSystem.DomRegion expressionRegion;
+				DomRegion expressionRegion;
 				ResolveResult res = ed.GetLanguageItem (offset, out expressionRegion);
 				
 				if (res == null || res.IsError || res.GetType () == typeof (ResolveResult))
@@ -87,13 +117,12 @@ namespace MonoDevelop.SourceEditor
 				
 				if (expressionRegion.IsEmpty)
 					return null;
-				
+
 				if (res is NamespaceResolveResult ||
 				    res is ConversionResolveResult ||
 				    res is ForEachResolveResult ||
 				    res is TypeIsResolveResult ||
 				    res is TypeOfResolveResult ||
-				    res is TypeResolveResult ||
 				    res is ErrorResolveResult)
 					return null;
 				
@@ -106,13 +135,26 @@ namespace MonoDevelop.SourceEditor
 				
 				if (res is LocalResolveResult) {
 					var lr = (LocalResolveResult) res;
-					
-					// Capture only the local variable portion of the expression...
-					expression = lr.Variable.Name;
+
+					// In a setter, the 'value' variable will have a begin line/column of 0,0 which is an undefined offset
+					if (lr.Variable.Region.BeginLine != 0 && lr.Variable.Region.BeginColumn != 0) {
+						// Use the start and end offsets of the variable region so that we get the "@" in variable names like "@class"
+						start = new DocumentLocation (lr.Variable.Region.BeginLine, lr.Variable.Region.BeginColumn);
+						end = new DocumentLocation (lr.Variable.Region.EndLine, lr.Variable.Region.EndColumn);
+						startOffset = editor.Document.LocationToOffset (start);
+						endOffset = editor.Document.LocationToOffset (end);
+					}
+
+					expression = ed.GetTextBetween (startOffset, endOffset).Trim ();
+
+					// Note: When the LocalResolveResult is a parameter, the Variable.Region includes the type
+					if (lr.IsParameter) {
+						int index = IndexOfLastWhiteSpace (expression);
+						if (index != -1)
+							expression = expression.Substring (index + 1);
+					}
+
 					length = expression.Length;
-					
-					// Calculate start offset based on the end offset because we don't want to include the type information.
-					startOffset = endOffset - length;
 				} else if (res is InvocationResolveResult) {
 					var ir = (InvocationResolveResult) res;
 					
@@ -141,7 +183,10 @@ namespace MonoDevelop.SourceEditor
 						} else if (mr.Member is IField) {
 							var field = (IField) mr.Member;
 							
-							expression = field.Name;
+							if (field.IsStatic)
+								expression = field.FullName;
+							else
+								expression = field.Name;
 						} else {
 							return null;
 						}
@@ -151,6 +196,8 @@ namespace MonoDevelop.SourceEditor
 				} else if (res is ConstantResolveResult) {
 					// Fall through...
 				} else if (res is ThisResolveResult) {
+					// Fall through...
+				} else if (res is TypeResolveResult) {
 					// Fall through...
 				} else {
 					return null;
@@ -196,20 +243,27 @@ namespace MonoDevelop.SourceEditor
 			return char.IsLetterOrDigit (c) || c == '_';
 		}
 			
-		public Gtk.Window CreateTooltipWindow (Mono.TextEditor.TextEditor editor, int offset, Gdk.ModifierType modifierState, TooltipItem item)
+		public override Gtk.Window ShowTooltipWindow (TextEditor editor, int offset, Gdk.ModifierType modifierState, int mouseX, int mouseY, TooltipItem item)
 		{
-			return new DebugValueWindow (editor, offset, DebuggingService.CurrentFrame, (ObjectValue) item.Item, null);
-		}
-		
-		public void GetRequiredPosition (Mono.TextEditor.TextEditor editor, Gtk.Window tipWindow, out int requiredWidth, out double xalign)
-		{
-			xalign = 0.1;
-			requiredWidth = tipWindow.SizeRequest ().Width;
+			var location = editor.OffsetToLocation (item.ItemSegment.Offset);
+			var point = editor.LocationToPoint (location);
+			int lineHeight = (int) editor.LineHeight;
+			int y = point.Y;
+
+			// find the top of the line that the mouse is hovering over
+			while (y + lineHeight < mouseY)
+				y += lineHeight;
+
+			var caret = new Gdk.Rectangle (mouseX, y, 1, lineHeight);
+			tooltip = new DebugValueWindow (editor, offset, DebuggingService.CurrentFrame, (ObjectValue) item.Item, null);
+			tooltip.ShowPopup (editor, caret, PopupPosition.TopLeft);
+
+			return tooltip;
 		}
 
-		public bool IsInteractive (Mono.TextEditor.TextEditor editor, Gtk.Window tipWindow)
+		public override bool IsInteractive (TextEditor editor, Gtk.Window tipWindow)
 		{
-			return true;
+			return DebuggingService.IsDebugging;
 		}
 		
 		#endregion 
@@ -217,7 +271,8 @@ namespace MonoDevelop.SourceEditor
 		#region IDisposable implementation
 		public void Dispose ()
 		{
-			DebuggingService.CurrentFrameChanged -= HandleCurrentFrameChanged;
+			DebuggingService.CurrentFrameChanged -= CurrentFrameChanged;
+			DebuggingService.DebugSessionStarted -= DebugSessionStarted;
 		}
 		#endregion
 	}

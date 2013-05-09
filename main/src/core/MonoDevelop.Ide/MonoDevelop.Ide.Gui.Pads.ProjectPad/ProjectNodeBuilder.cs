@@ -42,7 +42,7 @@ using System.Linq;
 
 namespace MonoDevelop.Ide.Gui.Pads.ProjectPad
 {
-	public class ProjectNodeBuilder: FolderNodeBuilder
+	class ProjectNodeBuilder: FolderNodeBuilder
 	{
 		ProjectFileEventHandler fileAddedHandler;
 		ProjectFileEventHandler fileRemovedHandler;
@@ -135,12 +135,17 @@ namespace MonoDevelop.Ide.Gui.Pads.ProjectPad
 			// Gray out the project name if it is not selected in the current build configuration
 			
 			SolutionConfiguration conf = p.ParentSolution.GetConfiguration (IdeApp.Workspace.ActiveConfiguration);
-			if (conf == null || !conf.BuildEnabledForItem (p)) {
+			SolutionConfigurationEntry ce = null;
+			bool noMapping = conf == null || (ce = conf.GetEntryForItem (p)) == null;
+			bool missingConfig = false;
+			if (noMapping || !ce.Build || (missingConfig = p.Configurations [ce.ItemConfiguration] == null)) {
 				Gdk.Pixbuf ticon = Context.GetComposedIcon (icon, "project-no-build");
 				if (ticon == null)
 					ticon = Context.CacheComposedIcon (icon, "project-no-build", ImageService.MakeTransparent (icon, 0.5));
 				icon = ticon;
-				label = "<span foreground='gray'>" + label + " <small>(not built in active configuration)</small></span>";
+				label = missingConfig
+					? "<span foreground='red'>" + label + " <small>(invalid configuration mapping)</small></span>"
+					: "<span foreground='gray'>" + label + " <small>(not built in active configuration)</small></span>";
 			}
 		}
 
@@ -338,7 +343,7 @@ namespace MonoDevelop.Ide.Gui.Pads.ProjectPad
 		
 	}
 	
-	public class ProjectNodeCommandHandler: FolderCommandHandler
+	class ProjectNodeCommandHandler: FolderCommandHandler
 	{
 		public override string GetFolderPath (object dataObject)
 		{

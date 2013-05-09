@@ -51,7 +51,6 @@ namespace MonoDevelop.Projects
 	[ProjectModelDataItem ("AbstractDotNetProject")]
 	public abstract class DotNetProject : Project, IAssemblyProject
 	{
-
 		bool usePartialTypes = true;
 		ProjectParameters languageParameters;
 
@@ -192,6 +191,18 @@ namespace MonoDevelop.Projects
 		
 		public ProjectReferenceCollection References {
 			get { return projectReferences; }
+		}
+
+		public virtual bool CanReferenceProject (DotNetProject targetProject, out string reason)
+		{
+			if (!TargetFramework.CanReferenceAssembliesTargetingFramework (targetProject.TargetFramework)) {
+				reason = GettextCatalog.GetString ("Incompatible target framework: {0}", targetProject.TargetFramework.Id);
+				return false;
+			}
+
+			reason = null;
+
+			return true;
 		}
 
 		public IDotNetLanguageBinding LanguageBinding {
@@ -470,7 +481,7 @@ namespace MonoDevelop.Projects
 			// Generated satellite resource files
 			
 			FilePath outputDir = conf.OutputDirectory;
-			string satelliteAsmName = Path.GetFileNameWithoutExtension (conf.OutputAssembly) + ".resources.dll";
+			string satelliteAsmName = Path.GetFileNameWithoutExtension (conf.CompiledOutputName) + ".resources.dll";
 			
 			HashSet<string> cultures = new HashSet<string> ();
 			foreach (ProjectFile finfo in Files) {
@@ -533,28 +544,15 @@ namespace MonoDevelop.Projects
 						LoggingService.LogWarning ("Project '{0}' referenced from '{1}' could not be found", projectReference.Reference, this.Name);
 						continue;
 					}
-
-					string refOutput = p.GetOutputFileName (configuration);
-					if (string.IsNullOrEmpty (refOutput)) {
-						LoggingService.LogWarning ("Project '{0}' referenced from '{1}' has an empty output filename", p.Name, this.Name);
-						continue;
-					}
-
-					list.Add (refOutput);
-
+					DotNetProjectConfiguration conf = p.GetConfiguration (configuration) as DotNetProjectConfiguration;
 					//VS COMPAT: recursively copy references's "local copy" files
 					//but only copy the "copy to output" files from the immediate references
-					if (processedProjects.Add (p) || supportReferDistance == 1)
-						foreach (var f in p.GetSupportFileList (configuration))
-							list.Add (f.Src, f.CopyOnlyIfNewer, f.Target);
+					if (processedProjects.Add (p) || supportReferDistance == 1) {
+						foreach (var v in p.GetOutputFiles (configuration))
+							list.Add (v, true, v.CanonicalPath.ToString ().Substring (conf.OutputDirectory.CanonicalPath.ToString ().Length + 1));
 
-					DotNetProjectConfiguration refConfig = p.GetConfiguration (configuration) as DotNetProjectConfiguration;
-
-					if (refConfig != null && refConfig.DebugMode) {
-						string mdbFile = TargetRuntime.GetAssemblyDebugInfoFile (refOutput);
-						if (File.Exists (mdbFile)) {
-							list.Add (mdbFile);
-						}
+						foreach (var v in p.GetSupportFileList (configuration))
+							list.Add (v.Src, v.CopyOnlyIfNewer, v.Target);
 					}
 				}
 				else if (projectReference.ReferenceType == ReferenceType.Assembly) {
@@ -649,14 +647,9 @@ namespace MonoDevelop.Projects
 			}
 			
 			yield return fileName;
-			Mono.Cecil.AssemblyDefinition adef;
-			try {
-				adef = Mono.Cecil.AssemblyDefinition.ReadAssembly (fileName);
-			} catch {
-				yield break;
-			}
-			foreach (Mono.Cecil.AssemblyNameReference aref in adef.MainModule.AssemblyReferences) {
-				string asmFile = Path.Combine (Path.GetDirectoryName (fileName), aref.Name);
+
+			foreach (var reference in SystemAssemblyService.GetAssemblyReferences (fileName)) {
+				string asmFile = Path.Combine (Path.GetDirectoryName (fileName), reference);
 				foreach (string refa in GetAssemblyRefsRec (asmFile, visited))
 					yield return refa;
 			}
@@ -676,7 +669,7 @@ namespace MonoDevelop.Projects
 
 		public override IEnumerable<SolutionItem> GetReferencedItems (ConfigurationSelector configuration)
 		{
-			List<SolutionItem> items = new List<SolutionItem> ();
+			List<SolutionItem> items = new List<SolutionItem> (base.GetReferencedItems (configuration));
 			if (ParentSolution == null)
 				return items;
 
@@ -851,7 +844,7 @@ namespace MonoDevelop.Projects
 				return null;
 			//return all projects in the sln in case some are loaded dynamically
 			//FIXME: should we do this for the whole workspace?
-			return ParentSolution.GetAllProjects ().OfType<DotNetProject> ()
+			return ParentSolution.RootFolder.GetAllBuildableEntries (configuration).OfType<DotNetProject> ()
 				.Select (d => (string) d.GetOutputFileName (configuration))
 				.Where (d => !string.IsNullOrEmpty (d)).ToList ();
 		}
@@ -873,6 +866,8 @@ namespace MonoDevelop.Projects
 			if (config == null)
 				return false;
 			ExecutionCommand cmd = CreateExecutionCommand (configuration, config);
+			if (context.ExecutionTarget != null)
+				cmd.Target = context.ExecutionTarget;
 
 			return (compileTarget == CompileTarget.Exe || compileTarget == CompileTarget.WinExe) && context.ExecutionHandler.CanExecute (cmd);
 		}
@@ -1061,7 +1056,7 @@ namespace MonoDevelop.Projects
 			if (oldHandler.GetType () != newHandler.GetType ()) {
 				// If the file format has a default resource handler different from the one
 				// choosen for this project, then all resource ids must be converted
-				foreach (ProjectFile file in Files) {
+				foreach (ProjectFile file in Files.Where (f => f.BuildAction == BuildAction.EmbeddedResource)) {
 					if (file.Subtype == Subtype.Directory)
 						continue;
 					string oldId = file.GetResourceId (oldHandler);
@@ -1100,14 +1095,12 @@ namespace MonoDevelop.Projects
 
 		internal void NotifyReferenceRemovedFromProject (ProjectReference reference)
 		{
-			SetNeedsBuilding (true);
 			NotifyModified ("References");
 			OnReferenceRemovedFromProject (new ProjectReferenceEventArgs (this, reference));
 		}
 
 		internal void NotifyReferenceAddedToProject (ProjectReference reference)
 		{
-			SetNeedsBuilding (true);
 			NotifyModified ("References");
 			OnReferenceAddedToProject (new ProjectReferenceEventArgs (this, reference));
 		}
@@ -1150,6 +1143,8 @@ namespace MonoDevelop.Projects
 			try {
 				try {
 					ExecutionCommand executionCommand = CreateExecutionCommand (configuration, dotNetProjectConfig);
+					if (context.ExecutionTarget != null)
+						executionCommand.Target = context.ExecutionTarget;
 
 					if (!context.ExecutionHandler.CanExecute (executionCommand)) {
 						monitor.ReportError (GettextCatalog.GetString ("Can not execute \"{0}\". The selected execution mode is not supported for .NET projects.", dotNetProjectConfig.CompiledOutputName), null);
@@ -1166,6 +1161,7 @@ namespace MonoDevelop.Projects
 					aggregatedOperationMonitor.Dispose ();
 				}
 			} catch (Exception ex) {
+				LoggingService.LogError (string.Format ("Cannot execute \"{0}\"", dotNetProjectConfig.CompiledOutputName), ex);
 				monitor.ReportError (GettextCatalog.GetString ("Cannot execute \"{0}\"", dotNetProjectConfig.CompiledOutputName), ex);
 			}
 		}

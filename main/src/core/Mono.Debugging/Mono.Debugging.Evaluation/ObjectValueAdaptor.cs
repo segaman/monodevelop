@@ -26,14 +26,14 @@
 // THE SOFTWARE.
 
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Reflection;
+using System.Diagnostics;
+using System.Collections.Generic;
+
 using Mono.Debugging.Client;
 using Mono.Debugging.Backend;
-using System.Diagnostics;
-using System.Collections;
 
 namespace Mono.Debugging.Evaluation
 {
@@ -91,6 +91,10 @@ namespace Mono.Debugging.Evaluation
 		{
 			try {
 				return CreateObjectValueImpl (ctx, source, path, obj, flags);
+			} catch (EvaluatorAbortedException ex) {
+				return ObjectValue.CreateFatalError (path.LastName, ex.Message, flags);
+			} catch (EvaluatorException ex) {
+				return ObjectValue.CreateFatalError (path.LastName, ex.Message, flags);
 			} catch (Exception ex) {
 				ctx.WriteDebuggerError (ex);
 				return ObjectValue.CreateFatalError (path.LastName, ex.Message, flags);
@@ -272,13 +276,31 @@ namespace Mono.Debugging.Evaluation
 		public abstract bool IsString (EvaluationContext ctx, object val);
 		public abstract bool IsArray (EvaluationContext ctx, object val);
 		public abstract bool IsEnum (EvaluationContext ctx, object val);
+		public abstract bool IsValueType (object type);
 		public abstract bool IsClass (object type);
 		public abstract object TryCast (EvaluationContext ctx, object val, object type);
 
 		public abstract object GetValueType (EvaluationContext ctx, object val);
-		public abstract string GetTypeName (EvaluationContext ctx, object val);
+		public abstract string GetTypeName (EvaluationContext ctx, object type);
 		public abstract object[] GetTypeArgs (EvaluationContext ctx, object type);
 		public abstract object GetBaseType (EvaluationContext ctx, object type);
+
+		public virtual bool IsNullableType (EvaluationContext ctx, object type)
+		{
+			return type != null && GetTypeName (ctx, type).StartsWith ("System.Nullable`1", StringComparison.Ordinal);
+		}
+
+		public virtual bool NullableHasValue (EvaluationContext ctx, object type, object obj)
+		{
+			ValueReference hasValue = GetMember (ctx, type, obj, "HasValue");
+
+			return (bool) hasValue.ObjectValue;
+		}
+
+		public virtual ValueReference NullableGetValue (EvaluationContext ctx, object type, object obj)
+		{
+			return GetMember (ctx, type, obj, "Value");
+		}
 		
 		public virtual bool IsFlagsEnumType (EvaluationContext ctx, object type)
 		{
@@ -335,10 +357,38 @@ namespace Mono.Debugging.Evaluation
 		{
 			return default (object);
 		}
+
+		public virtual bool IsTypeLoaded (EvaluationContext ctx, string typeName)
+		{
+			object t = GetType (ctx, typeName);
+
+			if (t == null)
+				return false;
+
+			return IsTypeLoaded (ctx, t);
+		}
+
+		public virtual bool IsTypeLoaded (EvaluationContext ctx, object type)
+		{
+			return true;
+		}
 		
 		public virtual object ForceLoadType (EvaluationContext ctx, string typeName)
 		{
-			return GetType (ctx, typeName);
+			object t = GetType (ctx, typeName);
+
+			if (t == null || IsTypeLoaded (ctx, t))
+				return t;
+
+			if (ForceLoadType (ctx, t))
+				return t;
+
+			return null;
+		}
+
+		public virtual bool ForceLoadType (EvaluationContext ctx, object type)
+		{
+			return true;
 		}
 
 		public abstract object CreateValue (EvaluationContext ctx, object value);
@@ -364,7 +414,8 @@ namespace Mono.Debugging.Evaluation
 
 		protected virtual ObjectValue CreateObjectValueImpl (EvaluationContext ctx, Mono.Debugging.Backend.IObjectValueSource source, ObjectPath path, object obj, ObjectValueFlags flags)
 		{
-			string typeName = obj != null ? GetValueTypeName (ctx, obj) : "";
+			object type = obj != null ? GetValueType (ctx, obj) : null;
+			string typeName = type != null ? GetTypeName (ctx, type) : "";
 
 			if (obj == null || IsNull (ctx, obj)) {
 				return ObjectValue.CreateNullObject (source, path, GetDisplayTypeName (typeName), flags);
@@ -376,27 +427,45 @@ namespace Mono.Debugging.Evaluation
 				return ObjectValue.CreateObject (source, path, GetDisplayTypeName (typeName), ctx.Evaluator.TargetObjectToExpression (ctx, obj), flags, null);
 			}
 			else {
-				TypeDisplayData tdata = GetTypeDisplayData (ctx, GetValueType (ctx, obj));
-				
-				EvaluationResult tvalue;
-				if (!string.IsNullOrEmpty (tdata.ValueDisplayString) && ctx.Options.AllowDisplayStringEvaluation)
-					tvalue = new EvaluationResult (EvaluateDisplayString (ctx, obj, tdata.ValueDisplayString));
-				else
-					tvalue = ctx.Evaluator.TargetObjectToExpression (ctx, obj);
-				
+				EvaluationResult tvalue = null;
+				TypeDisplayData tdata = null;
 				string tname;
-				if (!string.IsNullOrEmpty (tdata.TypeDisplayString) && ctx.Options.AllowDisplayStringEvaluation)
-					tname = EvaluateDisplayString (ctx, obj, tdata.TypeDisplayString);
-				else
+
+				if (IsNullableType (ctx, type)) {
+					if (NullableHasValue (ctx, type, obj)) {
+						ValueReference value = NullableGetValue (ctx, type, obj);
+
+						tdata = GetTypeDisplayData (ctx, value.Type);
+						obj = value.Value;
+					} else {
+						tdata = GetTypeDisplayData (ctx, type);
+						tvalue = new EvaluationResult ("null");
+					}
+
 					tname = GetDisplayTypeName (typeName);
-				
+				} else {
+					tdata = GetTypeDisplayData (ctx, type);
+
+					if (!string.IsNullOrEmpty (tdata.TypeDisplayString) && ctx.Options.AllowDisplayStringEvaluation)
+						tname = EvaluateDisplayString (ctx, obj, tdata.TypeDisplayString);
+					else
+						tname = GetDisplayTypeName (typeName);
+				}
+
+				if (tvalue == null) {
+					if (!string.IsNullOrEmpty (tdata.ValueDisplayString) && ctx.Options.AllowDisplayStringEvaluation)
+						tvalue = new EvaluationResult (EvaluateDisplayString (ctx, obj, tdata.ValueDisplayString));
+					else
+						tvalue = ctx.Evaluator.TargetObjectToExpression (ctx, obj);
+				}
+
 				ObjectValue oval = ObjectValue.CreateObject (source, path, tname, tvalue, flags, null);
 				if (!string.IsNullOrEmpty (tdata.NameDisplayString) && ctx.Options.AllowDisplayStringEvaluation)
 					oval.Name = EvaluateDisplayString (ctx, obj, tdata.NameDisplayString);
 				return oval;
 			}
 		}
-
+		
 		public ObjectValue[] GetObjectValueChildren (EvaluationContext ctx, IObjectSource objectSource, object obj, int firstItemIndex, int count)
 		{
 			return GetObjectValueChildren (ctx, objectSource, GetValueType (ctx, obj), obj, firstItemIndex, count, true);
@@ -414,6 +483,16 @@ namespace Mono.Debugging.Evaluation
 
 			if (IsPrimitive (ctx, obj))
 				return new ObjectValue[0];
+
+			if (IsNullableType (ctx, type)) {
+				if (NullableHasValue (ctx, type, obj)) {
+					ValueReference value = NullableGetValue (ctx, type, obj);
+
+					return GetObjectValueChildren (ctx, objectSource, value.Type, value.Value, firstItemIndex, count, dereferenceProxy);
+				} else {
+					return new ObjectValue[0];
+				}
+			}
 
 			bool showRawView = false;
 			
@@ -521,9 +600,9 @@ namespace Mono.Debugging.Evaluation
 		
 		class ExpData
 		{
-			public EvaluationContext ctx;
-			public string exp;
-			public ObjectValueAdaptor adaptor;
+			ObjectValueAdaptor adaptor;
+			EvaluationContext ctx;
+			string exp;
 			
 			public ExpData (EvaluationContext ctx, string exp, ObjectValueAdaptor adaptor)
 			{
@@ -634,7 +713,7 @@ namespace Mono.Debugging.Evaluation
 							CompletionData data = new CompletionData ();
 							foreach (ValueReference cv in vr.GetChildReferences (ctx.Options))
 								data.Items.Add (new CompletionItem (cv.Name, cv.Flags));
-							data.ExpressionLenght = 0;
+							data.ExpressionLength = 0;
 							return data;
 						}
 					} catch (Exception ex) {
@@ -657,18 +736,18 @@ namespace Mono.Debugging.Evaluation
 				string partialWord = exp.Substring (i+1);
 				
 				CompletionData data = new CompletionData ();
-				data.ExpressionLenght = partialWord.Length;
+				data.ExpressionLength = partialWord.Length;
 				
 				// Local variables
 				
 				foreach (ValueReference vc in GetLocalVariables (ctx))
-					if (vc.Name.StartsWith (partialWord))
+					if (vc.Name.StartsWith (partialWord, StringComparison.InvariantCulture))
 						data.Items.Add (new CompletionItem (vc.Name, vc.Flags));
 				
 				// Parameters
 				
 				foreach (ValueReference vc in GetParameters (ctx))
-					if (vc.Name.StartsWith (partialWord))
+					if (vc.Name.StartsWith (partialWord, StringComparison.InvariantCulture))
 						data.Items.Add (new CompletionItem (vc.Name, vc.Flags));
 				
 				// Members
@@ -681,7 +760,7 @@ namespace Mono.Debugging.Evaluation
 				object type = GetEnclosingType (ctx);
 				
 				foreach (ValueReference vc in GetMembers (ctx, null, type, thisobj != null ? thisobj.Value : null))
-					if (vc.Name.StartsWith (partialWord))
+					if (vc.Name.StartsWith (partialWord, StringComparison.InvariantCulture))
 						data.Items.Add (new CompletionItem (vc.Name, vc.Flags));
 				
 				if (data.Items.Count > 0)
@@ -763,6 +842,17 @@ namespace Mono.Debugging.Evaluation
 		{
 			yield break;
 		}
+
+		public virtual object GetParentType (EvaluationContext ctx, object type)
+		{
+			if ((type is Type))
+				return ((Type) type).DeclaringType;
+
+			var name = GetTypeName (ctx, type);
+			int plus = name.LastIndexOf ('+');
+
+			return plus != -1 ? GetType (ctx, name.Substring (0, plus)) : null;
+		}
 		
 		public virtual object CreateArray (EvaluationContext ctx, object type, object[] values)
 		{
@@ -842,9 +932,10 @@ namespace Mono.Debugging.Evaluation
 		
 		public virtual object TargetObjectToObject (EvaluationContext ctx, object obj)
 		{
-			if (IsNull (ctx, obj)) {
+			if (IsNull (ctx, obj))
 				return null;
-			} else if (IsArray (ctx, obj)) {
+
+			if (IsArray (ctx, obj)) {
 				ICollectionAdaptor adaptor = CreateArrayAdaptor (ctx, obj);
 				string ename = GetDisplayTypeName (GetTypeName (ctx, adaptor.ElementType));
 				int[] dims = adaptor.GetDimensions ();
@@ -860,10 +951,11 @@ namespace Mono.Debugging.Evaluation
 				i = ename.IndexOf ('[', i);
 				if (i != -1)
 					return new EvaluationResult ("{" + ename.Substring (0, i) + tn + ename.Substring (i) + "}");
-				else
-					return new EvaluationResult ("{" + ename + tn + "}");
+
+				return new EvaluationResult ("{" + ename + tn + "}");
 			}
-			else if (IsEnum (ctx, obj)) {
+
+			if (IsEnum (ctx, obj)) {
 				object type = GetValueType (ctx, obj);
 				object longType = GetType (ctx, "System.Int64");
 				object c = Cast (ctx, obj, longType);
@@ -887,26 +979,34 @@ namespace Mono.Debugging.Evaluation
 						}
 					}
 				}
+
 				if (IsFlagsEnumType (ctx, type) && rest == 0 && composed.Length > 0)
 					return new EvaluationResult (composed, composedDisplay);
-				else
-					return new EvaluationResult (val.ToString ());
+
+				return new EvaluationResult (val.ToString ());
 			}
-			else if (GetValueTypeName (ctx, obj) == "System.Decimal") {
+
+			if (GetValueTypeName (ctx, obj) == "System.Decimal") {
 				string res = CallToString (ctx, obj);
 				// This returns the decimal formatted using the current culture. It has to be converted to invariant culture.
 				decimal dec = decimal.Parse (res);
 				res = dec.ToString (System.Globalization.CultureInfo.InvariantCulture);
 				return new EvaluationResult (res);
 			}
-			else if (IsClassInstance (ctx, obj)) {
+
+			if (IsClassInstance (ctx, obj)) {
 				TypeDisplayData tdata = GetTypeDisplayData (ctx, GetValueType (ctx, obj));
 				if (!string.IsNullOrEmpty (tdata.ValueDisplayString) && ctx.Options.AllowDisplayStringEvaluation)
 					return new EvaluationResult (EvaluateDisplayString (ctx, obj, tdata.ValueDisplayString));
 
 				// Return the type name
-				if (ctx.Options.AllowToStringCalls)
-					return new EvaluationResult ("{" + CallToString (ctx, obj) + "}");
+				if (ctx.Options.AllowToStringCalls) {
+					try {
+						return new EvaluationResult ("{" + CallToString (ctx, obj) + "}");
+					} catch (TimeOutException) {
+						// ToString() timed out, fall back to default behavior.
+					}
+				}
 				
 				if (!string.IsNullOrEmpty (tdata.TypeDisplayString) && ctx.Options.AllowDisplayStringEvaluation)
 					return new EvaluationResult ("{" + EvaluateDisplayString (ctx, obj, tdata.TypeDisplayString) + "}");
@@ -921,11 +1021,12 @@ namespace Mono.Debugging.Evaluation
 		{
 			if (obj == null)
 				return null;
+
 			object res = TryConvert (ctx, obj, targetType);
 			if (res != null)
 				return res;
-			else
-				throw new EvaluatorException ("Can't convert an object of type '{0}' to type '{1}'", GetValueTypeName (ctx, obj), GetTypeName (ctx, targetType));
+
+			throw new EvaluatorException ("Can't convert an object of type '{0}' to type '{1}'", GetValueTypeName (ctx, obj), GetTypeName (ctx, targetType));
 		}
 
 		public virtual object TryConvert (EvaluationContext ctx, object obj, object targetType)
@@ -937,11 +1038,12 @@ namespace Mono.Debugging.Evaluation
 		{
 			if (obj == null)
 				return null;
+
 			object res = TryCast (ctx, obj, targetType);
 			if (res != null)
 				return res;
-			else
-				throw new EvaluatorException ("Can't cast an object of type '{0}' to type '{1}'", GetValueTypeName (ctx, obj), GetTypeName (ctx, targetType));
+
+			throw new EvaluatorException ("Can't cast an object of type '{0}' to type '{1}'", GetValueTypeName (ctx, obj), GetTypeName (ctx, targetType));
 		}
 
 		public virtual string CallToString (EvaluationContext ctx, object obj)
@@ -1208,7 +1310,7 @@ namespace Mono.Debugging.Evaluation
 				
 				if (tn != null)
 					oval.Name += " (" + ctx.Adapter.GetDisplayTypeName (ctx, tn) + ")";
-				if (!other.Key.Name.EndsWith (")")) {
+				if (!other.Key.Name.EndsWith (")", StringComparison.Ordinal)) {
 					tn = other.Value.DeclaringType;
 					if (tn != null)
 						other.Key.Name += " (" + ctx.Adapter.GetDisplayTypeName (ctx, tn) + ")";

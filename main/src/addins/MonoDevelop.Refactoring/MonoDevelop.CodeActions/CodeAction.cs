@@ -25,6 +25,7 @@
 // THE SOFTWARE.
 using ICSharpCode.NRefactory;
 using System;
+using Mono.TextEditor;
 
 namespace MonoDevelop.CodeActions
 {
@@ -42,6 +43,17 @@ namespace MonoDevelop.CodeActions
 		/// Gets or sets the id string. The id is used to identify a specific code action.
 		/// </summary>
 		public string IdString { get; set; }
+
+		/// <summary>
+		/// Gets or sets the code issue this action is bound to. 
+		/// This allows to split the action and the issue provider.
+		/// </summary>
+		public Type BoundToIssue { get; set; }
+
+		/// <summary>
+		/// The region of the code action.
+		/// </summary>
+		public DocumentRegion DocumentRegion { get; set; }
 
 		public CodeAction ()
 		{

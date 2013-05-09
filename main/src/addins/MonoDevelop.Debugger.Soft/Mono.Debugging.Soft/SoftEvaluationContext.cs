@@ -48,10 +48,20 @@ namespace Mono.Debugging.Soft
 			string method = frame.Method.Name;
 			if (frame.Method.DeclaringType != null)
 				method = frame.Method.DeclaringType.FullName + "." + method;
-			var location = new DC.SourceLocation (method, frame.FileName, frame.LineNumber);
-			var lang = frame.Method != null? "Managed" : "Native";
+			var location = new DC.SourceLocation (method, frame.FileName, frame.LineNumber, frame.ColumnNumber);
+			string language;
+
+			if (frame.Method != null) {
+				if (frame.IsNativeTransition) {
+					language = "Transition";
+				} else {
+					language = "Managed";
+				}
+			} else {
+				language = "Native";
+			}
 			
-			Evaluator = session.GetEvaluator (new DC.StackFrame (frame.ILOffset, location, lang, session.IsExternalCode (frame), true));
+			Evaluator = session.GetEvaluator (new DC.StackFrame (frame.ILOffset, location, language, session.IsExternalCode (frame), true));
 			Adapter = session.Adaptor;
 			this.session = session;
 			this.stackVersion = session.StackVersion;
@@ -100,6 +110,16 @@ namespace Mono.Debugging.Soft
 			Thread = other.Thread;
 			session = other.session;
 		}
+
+		static bool IsValueTypeOrPrimitive (TypeMirror type)
+		{
+			return type != null && (type.IsValueType || type.IsPrimitive);
+		}
+
+		static bool IsValueTypeOrPrimitive (Type type)
+		{
+			return type != null && (type.IsValueType || type.IsPrimitive);
+		}
 		
 		public Value RuntimeInvoke (MethodMirror method, object target, Value[] values)
 		{
@@ -109,14 +129,16 @@ namespace Mono.Debugging.Soft
 				if (mparams.Length != values.Length)
 					throw new EvaluatorException ("Invalid number of arguments when calling: " + method.Name);
 				
-				for (int n=0; n<mparams.Length; n++) {
+				for (int n = 0; n < mparams.Length; n++) {
 					TypeMirror tm = mparams [n].ParameterType;
 					if (tm.IsValueType || tm.IsPrimitive)
 						continue;
+
 					object type = Adapter.GetValueType (this, values [n]);
 					TypeMirror argTypeMirror = type as TypeMirror;
 					Type argType = type as Type;
-					if ((argTypeMirror != null && (argTypeMirror.IsValueType || argTypeMirror.IsPrimitive)) || (argType != null && (argType.IsValueType || argType.IsPrimitive))) {
+
+					if (IsValueTypeOrPrimitive (argTypeMirror) || IsValueTypeOrPrimitive (argType)) {
 						// A value type being assigned to a parameter which is not a value type. The value has to be boxed.
 						try {
 							values [n] = Thread.Domain.CreateBoxedValue (values [n]);
@@ -128,12 +150,13 @@ namespace Mono.Debugging.Soft
 				}
 			}
 
-			if (!method.IsStatic && method.DeclaringType.IsClass) {
+			if (!method.IsStatic && method.DeclaringType.IsClass && !IsValueTypeOrPrimitive (method.DeclaringType)) {
 				object type = Adapter.GetValueType (this, target);
 				TypeMirror targetTypeMirror = type as TypeMirror;
 				Type targetType = type as Type;
 
-				if ((targetTypeMirror != null && (targetTypeMirror.IsValueType || targetTypeMirror.IsPrimitive)) || (targetType != null && (targetType.IsValueType || targetType.IsPrimitive))) {
+				if ((target is StructMirror && ((StructMirror) target).Type != method.DeclaringType) ||
+				    (IsValueTypeOrPrimitive (targetTypeMirror) || IsValueTypeOrPrimitive (targetType))) {
 					// A value type being assigned to a parameter which is not a value type. The value has to be boxed.
 					try {
 						target = Thread.Domain.CreateBoxedValue ((Value) target);

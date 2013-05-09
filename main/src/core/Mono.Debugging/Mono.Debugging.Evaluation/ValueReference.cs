@@ -141,8 +141,8 @@ namespace Mono.Debugging.Evaluation
 			
 			if (val != null)
 				return newCtx.Adapter.CreateObjectValue (newCtx, this, new ObjectPath (name), val, Flags);
-			else
-				return Mono.Debugging.Client.ObjectValue.CreateNullObject (this, name, newCtx.Adapter.GetTypeName (newCtx, Type), Flags);
+
+			return Mono.Debugging.Client.ObjectValue.CreateNullObject (this, name, newCtx.Adapter.GetTypeName (newCtx, Type), Flags);
 		}
 
 		ObjectValue IObjectValueSource.GetValue (ObjectPath path, EvaluationOptions options)
@@ -218,7 +218,7 @@ namespace Mono.Debugging.Evaluation
 		
 		public IObjectSource ParentSource { get; internal set; }
 
-		EvaluationContext GetChildrenContext (EvaluationOptions options)
+		protected EvaluationContext GetChildrenContext (EvaluationOptions options)
 		{
 			EvaluationContext newCtx = ctx.Clone ();
 			if (options != null)
@@ -256,11 +256,9 @@ namespace Mono.Debugging.Evaluation
 				return new ArrayValueReference (ctx, obj, indices);
 			}
 			
-			if (ctx.Adapter.IsClassInstance (Context, obj)) {
-				ValueReference val = ctx.Adapter.GetMember (GetChildrenContext (options), this, Type, obj, name);
-				return val;
-			}
-					
+			if (ctx.Adapter.IsClassInstance (Context, obj))
+				return ctx.Adapter.GetMember (GetChildrenContext (options), this, obj, name);
+
 			return null;
 		}
 	}

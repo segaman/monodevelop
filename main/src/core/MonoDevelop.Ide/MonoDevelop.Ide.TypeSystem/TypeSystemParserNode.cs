@@ -56,11 +56,11 @@ namespace MonoDevelop.Ide.TypeSystem
 			}
 		}
 		
-		ITypeSystemParser cachedInstance;
+		TypeSystemParser cachedInstance;
 		
-		public ITypeSystemParser Parser {
+		public TypeSystemParser Parser {
 			get {
-				return cachedInstance ?? (cachedInstance = (ITypeSystemParser)CreateInstance ());
+				return cachedInstance ?? (cachedInstance = (TypeSystemParser)CreateInstance ());
 			}
 		}
 		
@@ -74,5 +74,22 @@ namespace MonoDevelop.Ide.TypeSystem
 			return buildActions.Any (action => string.Equals (action, buildAction, StringComparison.OrdinalIgnoreCase));
 		}
 	}
+
+
+	public class TypeSystemOutputTrackingNode : ExtensionNode
+	{
+		[NodeAttribute (Description="The project type.")]
+		string projectType;
+
+		public string ProjectType {
+			get {
+				return projectType;
+			}
+			set {
+				projectType = value;
+			}
+		}
+	}
+
 }
 

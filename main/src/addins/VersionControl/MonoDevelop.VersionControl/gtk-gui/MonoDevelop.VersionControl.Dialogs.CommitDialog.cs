@@ -54,6 +54,7 @@ namespace MonoDevelop.VersionControl.Dialogs
 			this.fileList = new global::Gtk.TreeView ();
 			this.fileList.CanFocus = true;
 			this.fileList.Name = "fileList";
+			this.fileList.SearchColumn = 2;
 			this.scrolledwindow1.Add (this.fileList);
 			this.mainBox.Add (this.scrolledwindow1);
 			global::Gtk.Box.BoxChild w4 = ((global::Gtk.Box.BoxChild)(this.mainBox [this.scrolledwindow1]));
@@ -129,7 +130,11 @@ namespace MonoDevelop.VersionControl.Dialogs
 			w13.Spacing = 2;
 			// Container child GtkHBox.Gtk.Container+ContainerChild
 			global::Gtk.Image w14 = new global::Gtk.Image ();
-			w14.Pixbuf = global::Stetic.IconLoader.LoadIcon (this, "vc-commit", global::Gtk.IconSize.Menu);
+			w14.Pixbuf = global::Stetic.IconLoader.LoadIcon (
+				this,
+				"vc-commit",
+				global::Gtk.IconSize.Menu
+			);
 			w13.Add (w14);
 			// Container child GtkHBox.Gtk.Container+ContainerChild
 			global::Gtk.Label w16 = new global::Gtk.Label ();

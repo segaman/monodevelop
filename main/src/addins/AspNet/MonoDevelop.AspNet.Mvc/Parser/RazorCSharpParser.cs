@@ -40,25 +40,27 @@ using ICSharpCode.NRefactory.TypeSystem;
 using System.Web.Razor.Parser;
 using System.Web.Razor.Parser.SyntaxTree;
 using System.IO;
-using MonoDevelop.AspNet.Parser.Dom;
 using MonoDevelop.Core;
 using MonoDevelop.AspNet.Parser;
 using System.Web.Configuration;
 using System.Web.WebPages.Razor.Configuration;
 using System.Web.WebPages.Razor;
 using System.Configuration;
+using MonoDevelop.Projects;
+using MonoDevelop.AspNet.StateEngine;
 
 namespace MonoDevelop.AspNet.Mvc.Parser
 {
-	public class RazorCSharpParser : AbstractTypeSystemParser
+	public class RazorCSharpParser : TypeSystemParser
 	{
-		RazorEditorParser editorParser;
+		RazorEditorParserFixed.RazorEditorParser editorParser;
 		DocumentParseCompleteEventArgs capturedArgs;
 		AutoResetEvent parseComplete;
 		ChangeInfo lastChange;
 		string lastParsedFile;
 		TextDocument currentDocument;
-		AspMvcProject project;
+		AspMvcProject aspProject;
+		DotNetProject project;
 		IList<TextDocument> openDocuments;
 
 		public IList<TextDocument> OpenDocuments { get { return openDocuments; } }
@@ -66,16 +68,24 @@ namespace MonoDevelop.AspNet.Mvc.Parser
 		public RazorCSharpParser ()
 		{
 			openDocuments = new List<TextDocument> ();
+
+			IdeApp.Exited += delegate {
+				//HACK: workaround for Mono's not shutting downs IsBackground threads in WaitAny calls
+				if (editorParser != null) {
+					DisposeCurrentParser ();
+				}
+			};
 		}
 
 		public override ParsedDocument Parse (bool storeAst, string fileName, System.IO.TextReader content, Projects.Project project = null)
 		{
-			currentDocument = openDocuments.FirstOrDefault (d => d.FileName == fileName);
+			currentDocument = openDocuments.FirstOrDefault (d => d != null && d.FileName == fileName);
 			// We need document and project to be loaded to correctly initialize Razor Host.
-			if (project == null || (currentDocument == null && !TryAddDocument (fileName)))
+			this.project = project as DotNetProject;
+			if (this.project == null || (currentDocument == null && !TryAddDocument (fileName)))
 				return new RazorCSharpParsedDocument (fileName, new RazorCSharpPageInfo ());
 
-			this.project = project as AspMvcProject;
+			this.aspProject = project as AspMvcProject;
 
 			EnsureParserInitializedFor (fileName);
 
@@ -91,10 +101,16 @@ namespace MonoDevelop.AspNet.Mvc.Parser
 				}
 			}
 
-			CreateHtmlDocument ();
-			GetHtmlErrors (errors);
+			ParseHtmlDocument (errors);
 			CreateCSharpParsedDocument ();
 			ClearLastChange ();
+
+			RazorHostKind kind = RazorHostKind.WebPage;
+			if (editorParser.Host is WebCodeRazorHost) {
+				kind = RazorHostKind.WebCode;
+			} else if (editorParser.Host is MonoDevelop.RazorGenerator.RazorHost) {
+				kind = RazorHostKind.Template;
+			}
 
 			var pageInfo = new RazorCSharpPageInfo () {
 				HtmlRoot = htmlParsedDocument,
@@ -105,7 +121,8 @@ namespace MonoDevelop.AspNet.Mvc.Parser
 				Errors = errors,
 				FoldingRegions = GetFoldingRegions (),
 				Comments = comments,
-				Compilation = CreateCompilation ()
+				Compilation = CreateCompilation (),
+				HostKind = kind,
 			};
 
 			return new RazorCSharpParsedDocument (fileName, pageInfo);
@@ -117,12 +134,23 @@ namespace MonoDevelop.AspNet.Mvc.Parser
 			if (guiDoc != null && guiDoc.Editor != null) {
 				currentDocument = guiDoc.Editor.Document;
 				currentDocument.TextReplacing += OnTextReplacing;
-				openDocuments.Add (currentDocument);
+				lock (this) {
+					var newDocs = new List<TextDocument> (openDocuments);
+					newDocs.Add (currentDocument);
+					openDocuments = newDocs;
+				}
 				guiDoc.Closed += (sender, args) =>
 				{
 					var doc = sender as Document;
-					if (doc.Editor != null && doc.Editor.Document != null)
-						openDocuments.Remove (doc.Editor.Document);
+					if (doc.Editor != null && doc.Editor.Document != null) {
+						lock (this) {
+							openDocuments = new List<TextDocument> (openDocuments.Where (d => d != doc.Editor.Document));
+						}
+					}
+
+					if (lastParsedFile == doc.FileName && editorParser != null) {
+						DisposeCurrentParser ();
+					}
 				};
 				return true;
 			}
@@ -142,7 +170,7 @@ namespace MonoDevelop.AspNet.Mvc.Parser
 
 		void CreateParserFor (string fileName)
 		{
-			editorParser = new RazorEditorParser (CreateRazorHost (fileName), fileName);
+			editorParser = new RazorEditorParserFixed.RazorEditorParser (CreateRazorHost (fileName), fileName);
 
 			parseComplete = new AutoResetEvent (false);
 			editorParser.DocumentParseComplete += (sender, args) =>
@@ -156,16 +184,26 @@ namespace MonoDevelop.AspNet.Mvc.Parser
 
 		RazorEngineHost CreateRazorHost (string fileName)
 		{
+			var projectFile = project.GetProjectFile (fileName);
+			if (projectFile != null && projectFile.Generator == "RazorTemplatePreprocessor") {
+				var h = MonoDevelop.RazorGenerator.PreprocessedRazorHost.Create (fileName);
+				h.DesignTimeMode = true;
+				h.EnableLinePragmas = false;
+				return h;
+			}
+
 			string virtualPath = "~/Views/Default.cshtml";
-			if (project != null)
-				virtualPath = project.LocalToVirtualPath (fileName);
+			if (aspProject != null)
+				virtualPath = aspProject.LocalToVirtualPath (fileName);
 
 			WebPageRazorHost host = null;
 
 			// Try to create host using web.config file
 			var webConfigMap = new WebConfigurationFileMap ();
-			var vdm = new VirtualDirectoryMapping (project.BaseDirectory.Combine ("Views"), true, "web.config");
+			if (aspProject != null) {
+				var vdm = new VirtualDirectoryMapping (aspProject.BaseDirectory.Combine ("Views"), true, "web.config");
 			webConfigMap.VirtualDirectories.Add ("/", vdm);
+			}
 			Configuration configuration;
 			try {
 				configuration = WebConfigurationManager.OpenMappedWebConfiguration (webConfigMap, "/");
@@ -227,10 +265,10 @@ namespace MonoDevelop.AspNet.Mvc.Parser
 			}
 		}
 
-		RootNode htmlParsedDocument;
+		Xml.StateEngine.XDocument htmlParsedDocument;
 		IList<Comment> comments;
 
-		void CreateHtmlDocument ()
+		void ParseHtmlDocument (List<Error> errors)
 		{
 			var sb = new StringBuilder ();
 			var spanList = new List<Span> ();
@@ -265,21 +303,17 @@ namespace MonoDevelop.AspNet.Mvc.Parser
 			};
 
 			editorParser.CurrentParseTree.Accept (new CallbackVisitor (action));
-			var root = new RootNode ();
+
+			var parser = new Xml.StateEngine.Parser (new AspNetFreeState (), true);
 
 			try {
-				root.Parse (lastParsedFile, new StringReader (sb.ToString ()));
+				parser.Parse (new StringReader (sb.ToString ()));
 			} catch (Exception ex) {
 				LoggingService.LogError ("Unhandled error parsing html in Razor document '" + (lastParsedFile ?? "") + "'", ex);
 			}
 
-			htmlParsedDocument = root;
-		}
-
-		void GetHtmlErrors (List<Error> errors)
-		{
-			foreach (var error in htmlParsedDocument.ParseErrors)
-				errors.Add (new Error (ErrorType.Error, error.Message, error.Location.BeginLine, error.Location.BeginColumn));
+			htmlParsedDocument = parser.Nodes.GetRoot ();
+			errors.AddRange (parser.Errors);
 		}
 
 		IEnumerable<FoldingRegion> GetFoldingRegions ()
@@ -293,8 +327,8 @@ namespace MonoDevelop.AspNet.Mvc.Parser
 		void GetHtmlFoldingRegions (List<FoldingRegion> foldingRegions)
 		{
 			if (htmlParsedDocument != null) {
-				var cuVisitor = new CompilationUnitVisitor (foldingRegions);
-				htmlParsedDocument.AcceptVisit (cuVisitor);
+				var d = new AspNetParsedDocument (null, WebSubtype.Html, null, htmlParsedDocument);
+				foldingRegions.AddRange (d.Foldings);
 			}
 		}
 
@@ -342,21 +376,16 @@ namespace MonoDevelop.AspNet.Mvc.Parser
 		{
 			var unit = capturedArgs.GeneratorResults.GeneratedCode;
 			var provider = project.LanguageBinding.GetCodeDomProvider ();
-			string code;
 			using (var sw = new StringWriter ()) {
 				provider.GenerateCodeFromCompileUnit (unit, sw, new System.CodeDom.Compiler.CodeGeneratorOptions ()	{
-					// Values adjusted to Razor code generator
-					BlankLinesBetweenMembers = false,
+					// HACK: we use true, even though razor uses false, to work around a mono bug where it omits the 
+					// line ending after "#line hidden", resulting in the unparseable "#line hiddenpublic"
+					BlankLinesBetweenMembers = true,
+					// matches Razor built-in settings
 					IndentString = String.Empty,
 				});
-				sw.Flush ();
-				code = sw.ToString ();
+				return sw.ToString ();
 			}
-			//HACK: Add a newline between first line pragma and constructor declaration in the generated code file
-			//to correctly determine code segments and get code completion working properly on Mono.
-			//The missing newline is present only when Mono is used as a runtime.
-			code = code.Replace ("#line hiddenpublic", "#line hidden" + Environment.NewLine + "public");
-			return code;
 		}
 
 		// Creates compilation that includes underlying C# file for Razor view

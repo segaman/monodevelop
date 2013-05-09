@@ -162,6 +162,20 @@ namespace MonoDevelop.Ide.Commands
 		}
 	}
 
+	// MonoDevelop.Ide.Commands.FileCommands.CloseFile
+	public class CloseFileHandler: CommandHandler
+	{
+		protected override void Run ()
+		{
+			IdeApp.Workbench.ActiveDocument.Close ();
+		}
+
+		protected override void Update (CommandInfo info)
+		{
+			info.Enabled = IdeApp.Workbench.ActiveDocument != null;
+		}
+	}
+
 	// MonoDevelop.Ide.Commands.FileCommands.CloseWorkspace
 	// MonoDevelop.Ide.Commands.FileCommands.CloseWorkspaceItem
 	public class CloseWorkspaceHandler : CommandHandler
@@ -258,8 +272,10 @@ namespace MonoDevelop.Ide.Commands
 					Description = GettextCatalog.GetString ("Open {0}", ri.FileName)
 				};
 				Gdk.Pixbuf icon = DesktopService.GetPixbufForFile (ri.FileName, IconSize.Menu);
+				#pragma warning disable 618
 				if (icon != null)
 					cmd.Icon = ImageService.GetStockId (icon, IconSize.Menu);
+				#pragma warning restore 618
 				info.Add (cmd, ri.FileName);
 				i++;
 			}

@@ -322,7 +322,7 @@ namespace MonoDevelop.DesignerSupport
 				return;
 			
 			foreach (var unresolvedCls in parsedDocument.TopLevelTypeDefinitions) {
-				var cls = document.Compilation.MainAssembly.GetTypeDefinition (unresolvedCls);
+				var cls = document.Compilation.MainAssembly.GetTypeDefinition (unresolvedCls.FullTypeName);
 				if (cls == null)
 					continue;
 				TreeIter childIter;
@@ -338,11 +338,21 @@ namespace MonoDevelop.DesignerSupport
 		static void AddTreeClassContents (TreeStore store, TreeIter parent, ParsedDocument parsedDocument, ITypeDefinition cls, IUnresolvedTypeDefinition part)
 		{
 			List<object> items = new List<object> ();
-			foreach (object o in cls.GetMembers (m => part.Region.FileName == m.Region.FileName && part.Region.IsInside (m.Region.Begin)))
-				items.Add (o);
-
+			if (cls.Kind != TypeKind.Delegate) {
+				foreach (var o in cls.GetMembers (m => part.Region.FileName == m.Region.FileName && part.Region.IsInside (m.Region.Begin))) {
+					items.Add (o);
+				}
+				foreach (var o in cls.GetNestedTypes (m => part.Region.FileName == m.Region.FileName && part.Region.IsInside (m.Region.Begin))) {
+					if (o.DeclaringType == cls)
+						items.Add (o);
+				}
+				foreach (var o in cls.GetConstructors (m => part.Region.FileName == m.Region.FileName && part.Region.IsInside (m.Region.Begin))) {
+					if (o.IsSynthetic)
+						continue;
+					items.Add (o);
+				}
+			}
 			items.Sort (ClassOutlineNodeComparer.CompareRegion);
-
 			List<FoldingRegion> regions = new List<FoldingRegion> ();
 			foreach (FoldingRegion fr in parsedDocument.UserRegions)
 				//check regions inside class

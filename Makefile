@@ -2,7 +2,12 @@ include main/monodevelop_version
 
 EXTRA_DIST = configure
 
-all: all-recursive
+all: update_submodules all-recursive
+
+update_submodules:
+	if test -d ".git"; then \
+		git submodule update --init --recursive || exit 1; \
+	fi
 
 top_srcdir=.
 include $(top_srcdir)/config.make
@@ -41,7 +46,7 @@ distclean: distclean-recursive
 remove-stale-tarballs:
 	rm -rf tarballs
 
-dist: remove-stale-tarballs dist-recursive
+dist: update_submodules remove-stale-tarballs dist-recursive
 	mkdir -p tarballs
 	for t in $(SUBDIRS); do \
 		if test -e $$t/*.tar.gz; then \
@@ -74,6 +79,9 @@ dist: remove-stale-tarballs dist-recursive
 
 run:
 	cd main && $(MAKE) run
+
+run-sgen:
+	cd main && $(MAKE) run-sgen
 
 run-gdb:
 	cd main && $(MAKE) run-gdb
